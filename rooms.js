@@ -9,6 +9,7 @@ module.exports  =   {
                 containersPlaced:false,
                 roadNetworkPlaced:false,
                 primarySpawn:spawns[0].id,
+                spawning:[],
                 spawnQueue:[],
                 roleMin:{
                     "harvester":0,
@@ -19,12 +20,26 @@ module.exports  =   {
     },
 
     run(room){
-
+        this.updateSpawning(room);
         this.updateSpawnQueue(room);
         this.processSpawnQueue(room);
 
+
         if(room.controller.level == 1){
             room.memory.roleMin.harvester = 3;
+        }
+    },
+
+    updateSpawning(room){
+        if(room.memory.spawning.length == 0){ return; }
+
+        let creeps = room.find(FIND_MY_CREEPS);
+        for(let i = 0; i < creeps.length; i++){
+            for(let j = 0; j < room.memory.spawning.length; j++){
+                if(creeps[i].name == room.memory.spawning[j].name){
+                    room.memory.spawning.splice(j,1);
+                }
+            }
         }
     },
 
@@ -37,7 +52,7 @@ module.exports  =   {
                 let build = room.memory.spawnQueue[0];
                 let res = util.spawnCreep(spawns[i],build.name,build.memory);
                 if(res == 0){
-                    room.memory.spawnQueue.shift();
+                    room.memory.spawning.push(room.memory.spawnQueue.shift());
                 }
             }
         }
@@ -65,13 +80,17 @@ module.exports  =   {
                     return creep.memory.role == roles[i];
                 }
             });
-            let roleCount = roleCreeps.length + this.getQueueCount(room,roles[i]) + this.getRespawnCount(room,roles[i]);
+            let roleCount = roleCreeps.length + this.getQueueCount(room,roles[i]) + this.getRespawnCount(room,roles[i]) + this.getSpawningCount(room,roles[i]);
             if(roleCount < room.memory.roleMin[roles[i]]){
-                console.log('Added '+ roles[i] + ' to ' + room.name + ' spawn queue');
                 let memory = {'role':roles[i],'respawn':true}
-                room.memory.spawnQueue.push({'name':util.nameGenerator(),'memory':memory});
+                this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':memory})
             }
         }
+    },
+
+    pushSpawnQueue(room,build){
+        room.memory.spawnQueue.push(build);
+        console.log('Added '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue');
     },
 
     getQueueCount(room,role = null){
@@ -85,11 +104,22 @@ module.exports  =   {
         return count;
     },
 
+    getSpawningCount(room,role = null){
+        let count = 0;
+        for(var i = 0; i < room.memory.spawning.length; i++){
+            if(role != null && room.memory.spawning[i].memory.role != role){
+                continue;
+            }
+            count++;
+        }
+        return count;
+    },
+
     getRespawnCount(room,role = null){
         var creeps = 0;
         for(var name in Memory.creeps) {
             if(!Game.creeps[name]){
-                if(Memory.creeps[name].respawn && Memory.creeps[name].home.room.name == room.name){
+                if(Memory.creeps[name].respawn && Game.getObjectById(Memory.creeps[name].room).name == room.name){
                     if(role != null && role != Memory.creeps[name].role){ continue; }
                     creeps++;
                 }
