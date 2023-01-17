@@ -1,8 +1,7 @@
 var util = {
     initGlobals: function(){
-        if(!Memory.roomData){
+        if(!Memory.creepData){
             console.log("init RoomData")
-            Memory.roomData = {};
             Memory.creepData = {};
         }
     },
@@ -16,7 +15,7 @@ var util = {
         }
         return count;
     },
-    getCreepProp: function(creeps,property = 'role'){
+    getCreepProp: function(creeps = Game.creeps,property = 'role'){
         let propArr = [];
         for(let i = 0; i< creeps.length; i++){
             if(creeps[i].memory[property]){
@@ -59,6 +58,7 @@ var util = {
         if(!memory.role){ memory.role = null; }else{ if(!memory.level){ memory.level = 1; } }
         if(name == null){ name = this.nameGenerator(); }
         memory.home = spawn;
+
         var build = this.getRoleBuild(memory.role,memory.level);
         var energy = this.calcCreepBuildEnergy(build);
         var type = (memory.role != null ? memory.role.charAt(0).toUpperCase()+memory.role.slice(1)+" Level "+memory.level : 'Creep');

@@ -1,26 +1,43 @@
 const util = require("./util.root");
 module.exports  =   {
 
+    initMem(room){
+        if(!room.memory.roleMin){
+            console.log('Initializing Room Memory: ' + room.name );
+            let spawns = room.find(FIND_MY_SPAWNS);
+            room.memory = {
+                containersPlaced:false,
+                roadNetworkPlaced:false,
+                primarySpawn:spawns[0].id,
+                spawnQueue:[],
+                roleMin:{
+                    "harvester":0,
+                    "builder":0
+                }
+            };
+        }
+    },
+
     run(room){
 
         this.updateSpawnQueue(room);
         this.processSpawnQueue(room);
 
         if(room.controller.level == 1){
-            Memory.roomData[room.name].roleMin.harvester = 3;
+            room.memory.roleMin.harvester = 3;
         }
     },
 
     processSpawnQueue(room){
-        if(Memory.roomData[room.name].spawnQueue.length == 0){ return; }
+        if(room.memory.spawnQueue.length == 0){ return; }
 
         let spawns = this.getAvailableSpawns(room);
         if(spawns.length){
             for(let i = 0; i < spawns.length; i++){
-                let build = Memory.roomData[room.name].spawnQueue[0];
+                let build = room.memory.spawnQueue[0];
                 let res = util.spawnCreep(spawns[i],build.name,build.memory);
                 if(res == 0){
-                    Memory.roomData[room.name].spawnQueue.shift();
+                    room.memory.spawnQueue.shift();
                 }
             }
         }
@@ -49,18 +66,18 @@ module.exports  =   {
                 }
             });
             let roleCount = roleCreeps.length + this.getQueueCount(room,roles[i]) + this.getRespawnCount(room,roles[i]);
-            if(roleCount < Memory.roomData[room.name].roleMin[roles[i]]){
+            if(roleCount < room.memory.roleMin[roles[i]]){
                 console.log('Added '+ roles[i] + ' to ' + room.name + ' spawn queue');
                 let memory = {'role':roles[i],'respawn':true}
-                Memory.roomData[room.name].spawnQueue.push({'name':util.nameGenerator(),'memory':memory});
+                room.memory.spawnQueue.push({'name':util.nameGenerator(),'memory':memory});
             }
         }
     },
 
     getQueueCount(room,role = null){
         let count = 0;
-        for(var i = 0; i < Memory.roomData[room.name].spawnQueue.length; i++){
-            if(role != null && Memory.roomData[room.name].spawnQueue[i].memory.role != role){
+        for(var i = 0; i < room.memory.spawnQueue.length; i++){
+            if(role != null && room.memory.spawnQueue[i].memory.role != role){
                 continue;
             }
             count++;
@@ -79,22 +96,5 @@ module.exports  =   {
             }
         }
         return creeps;
-    },
-
-    initMem(room){
-        if(!Memory.roomData[room.name]){
-            console.log('Initializing Room Memory: ' + room.name );
-            var spawns = room.find(FIND_MY_SPAWNS);
-            Memory.roomData[room.name] = {
-                containersPlaced:false,
-                roadNetworkPlaced:false,
-                primarySpawn:spawns[0].id,
-                spawnQueue:[],
-                roleMin:{
-                    "harvester":0,
-                    "builder":0
-                }
-            };
-        }
     }
 }

@@ -14,7 +14,7 @@ module.exports.loop = function () {
     var roomNames = Object.keys(Game.rooms);
     for(var i = 0; i < roomNames.length; i++){
         let room = Game.rooms[roomNames[i]];
-        if(Memory.roomData[roomNames[i]] == null) {
+        if(room.memory.roleMin == null) {
             rooms.initMem(room);
         }
         rooms.run(room);
