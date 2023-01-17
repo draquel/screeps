@@ -57,7 +57,7 @@ var util = {
         if(!memory.level){ memory.level = null; }
         if(!memory.role){ memory.role = null; }else{ if(!memory.level){ memory.level = 1; } }
         if(name == null){ name = this.nameGenerator(); }
-        memory.home = spawn;
+        memory.room = spawn.room.name;
 
         var build = this.getRoleBuild(memory.role,memory.level);
         var energy = this.calcCreepBuildEnergy(build);
@@ -69,25 +69,6 @@ var util = {
             return spawn.spawnCreep(build,name,{memory:memory});
         }else{
             return ERR_NOT_ENOUGH_ENERGY;
-        }
-    },
-    cleanupMemory: function(){
-        if(Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
-            for(var name in Memory.creeps) {
-                if(!Game.creeps[name]) {
-                    if(Memory.creeps[name].respawn){
-                        var spawn = Game.getObjectById(Memory.creeps[name].home);
-                        if(!spawn.spawning && spawn.room.energyAvailable >= this.calcCreepBuildEnergy(this.getRoleBuild(Memory.creeps[name].role,Memory.creeps[name].level))){
-                            console.log('Auto-Respawning: '+name);
-                            this.spawnCreep(spawn,name,Memory.creeps[name]);
-                        }
-                    }else{
-                        delete Memory.creeps[name];
-                        console.log('Clearing non-existing creep memory:', name);
-                    }
-
-                }
-            }
         }
     },
     nameGenerator: function(){
@@ -110,6 +91,8 @@ var util = {
 
         return generated;
     },
+
+    // #TODO Externalize build config to json
     getRoleBuild(role,level = 1){
         var buildLib = {
             "harvester":{
