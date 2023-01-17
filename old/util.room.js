@@ -1,19 +1,12 @@
 var util = require('util.root');
-var utilCreep = require('util.creep');
+var utilCreep = require('old/util.creep');
 const creepUtil = require('./util.creep');
+
 var roomUtil = {
     initData: function(room){
         if(!Memory.roomData[room.name]){
             var spawns = room.find(FIND_MY_SPAWNS);
-            Memory.roomData[room.name] = {
-                containersPlaced:false,
-                roadNetworkPlaced:false,
-                primarySpawn:spawns[0].id,
-                roleMin:{
-                    "harvester":0,
-                    "builder":0
-                }
-            };
+            Memory.roomData[room.name] = new RoomManager();
         }
     },
 
@@ -49,7 +42,6 @@ var roomUtil = {
         //Spawn Builders
         var builderCount = builders.length + utilCreep.checkRoleRespawnCount('builder');
         if(!spawns[0].spawning && builderCount < Memory.roomData[room.name].roleMin.builder){
-            var spawns = room.find(FIND_MY_SPAWNS);
             var name = utilCreep.nameGenerator();
             var memory = {role:"builder",level:1,respawn:true};
             utilCreep.spawnCreep(spawns[0],name,memory);

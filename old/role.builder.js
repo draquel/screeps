@@ -3,7 +3,7 @@
         
  */
 
-var creepUtil = require('util.creep');
+var creepUtil = require('old/util.creep');
 var roleBuilder = {
 
     /** @param {Creep} creep **/
