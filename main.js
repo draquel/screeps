@@ -1,10 +1,9 @@
 const util = require('./util.root');
 const rooms = require('./rooms');
+const creeps = require('./creeps');
 
 module.exports.loop = function () {
-
-    util.initGlobals();
-
+    //Cleanup Creep Memory
     function cleanupMemory(){
         if(Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
             for(var name in Memory.creeps) {
@@ -16,18 +15,16 @@ module.exports.loop = function () {
                         rooms.pushSpawnQueue(room,{name:name, memory:memory});
                     }
                     delete Memory.creeps[name];
-                    console.log('Clearing non-existing creep memory:', name);
+                    console.log('Clearing creep memory:', name);
                 }
             }
         }
     }
-
-    //Cleanup Creep Memory
     cleanupMemory();
 
     //Room Operations
     var roomNames = Object.keys(Game.rooms);
-    for(var i = 0; i < roomNames.length; i++){
+    for(let i = 0; i < roomNames.length; i++){
         let room = Game.rooms[roomNames[i]];
         if(room.memory.roleMin == null) {
             rooms.initMem(room);
@@ -36,11 +33,8 @@ module.exports.loop = function () {
     }
 
     //Run Creep Roles
-    // for(var name in Game.creeps) {
-    //     var creep = Game.creeps[name];
-    //     if(!Memory.creepData[creepNames[i]]) {
-    //         Memory.creepData[creepNames[i]] = new CreepManager(creep);
-    //     }
-    //     Memory.creepData[creepNames[i]].run();
-    // }
+    for(let name in Game.creeps) {
+        let creep = Game.creeps[name];
+        creeps.run(creep);
+    }
 }
