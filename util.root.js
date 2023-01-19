@@ -1,10 +1,4 @@
 var util = {
-    initGlobals: function(){
-        if(!Memory.creepData){
-            console.log("init RoomData")
-            Memory.creepData = {};
-        }
-    },
     creepsNearPos: function(pos){
         var creeps = Game.rooms[pos.roomName].find(FIND_MY_CREEPS);
         var count = 0;
@@ -15,7 +9,7 @@ var util = {
         }
         return count;
     },
-    getCreepProp: function(creeps = Game.creeps,property = 'role'){
+    getCreepProp: function(creeps = [],property = 'role'){
         let propArr = [];
         for(let i = 0; i< creeps.length; i++){
             if(creeps[i].memory[property]){
@@ -24,6 +18,14 @@ var util = {
         }
         return propArr;
     },
+
+    setCreepProp: function(creeps = Game.creeps,property = null,value = null){
+        for(let i = 0; i< creeps.length; i++){
+            console.log(creeps[i].name + ' : ' + property + ' : ' + value);
+            creeps[i].memory[property] = value;
+        }
+    },
+
     openSpacesNearPos: function(pos,range = 1,array = false){
         var posDetails = Game.rooms[pos.roomName].lookAtArea(pos.y-range,pos.x-range,pos.y+range,pos.x+range,true);
         var openSpaces = 9;
@@ -97,11 +99,11 @@ var util = {
         var buildLib = {
             "harvester":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
+                2:[WORK,WORK,WORK,CARRY,CARRY,MOVE,MOVE]
             },
             "builder":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
+                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE]
             }
         }
         return buildLib[role][level];
