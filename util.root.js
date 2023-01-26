@@ -9,14 +9,9 @@ var util = {
         }
         return count;
     },
+
     getCreepProp: function(creeps = [],property = 'role'){
-        let propArr = [];
-        for(let i = 0; i< creeps.length; i++){
-            if(creeps[i].memory[property]){
-                propArr.push(creeps[i].memory[property]);
-            }
-        }
-        return propArr;
+        return creeps.map((c) => c.memory[property]);
     },
 
     setCreepProp: function(creeps = Game.creeps,property = null,value = null){
@@ -24,6 +19,18 @@ var util = {
             console.log(creeps[i].name + ' : ' + property + ' : ' + value);
             creeps[i].memory[property] = value;
         }
+    },
+
+    getCreepsByRole: function(room,role){
+        let creeps = room.find(FIND_MY_CREEPS,{filter: (c) => c.memory.role == role});
+        let spawning = room.memory.spawning.filter((c) => c.memory.role == role);
+        let queued = room.memory.spawnQueue.filter((c) => c.memory.role == role);
+
+        return [...creeps,...spawning,...queued];
+    },
+
+    getCreepPropsByRole: function(room,role,property){
+        return this.getCreepProp(this.getCreepsByRole(room,role),property);
     },
 
     openSpacesNearPos: function(pos,range = 1,array = false){
@@ -96,14 +103,27 @@ var util = {
 
     // #TODO Externalize build config to json
     getRoleBuild(role,level = 1){
+        //console.log('role:'+role+' - '+'level:'+level);
         var buildLib = {
             "harvester":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,WORK,CARRY,CARRY,MOVE,MOVE]
+                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
+            },
+            "r-harvester":{
+                1:[WORK,CARRY,CARRY,MOVE,MOVE],
+                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
             },
             "builder":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE]
+                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
+            },
+            "maintenance":{
+                1:[WORK,CARRY,CARRY,MOVE,MOVE],
+                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
+            },
+            "c-miner":{
+                1:[WORK,WORK,CARRY,MOVE],
+                2:[WORK,WORK,WORK,WORK,CARRY,MOVE]
             }
         }
         return buildLib[role][level];
