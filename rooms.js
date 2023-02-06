@@ -3,7 +3,7 @@ const util = require("./util.root");
 module.exports = {
 
     initMem(room){
-        if(!room.memory.roleMin){
+        if(!room.memory.level){
             console.log('Initializing Room Memory: ' + room.name );
             //let spawns = room.find(FIND_MY_SPAWNS);
             room.memory = {
@@ -13,23 +13,22 @@ module.exports = {
                     '3':{setRoleMin:false,addExtensions:false,complete:false}
                 },
                 containersPlaced:false,
-                roadNetworkPlaced:false,
-                //primarySpawn:spawns[0].id,
                 spawning:[],
                 spawnQueue:[],
                 roleMin:{
                     "harvester":0,
                     "c-miner":0,
                     "builder":0,
-                    "maintenance":0
+                    "maintenance":0,
+                    "d-maintenance":0
                 }
             };
         }
     },
 
-    isInit(room){
-
-    },
+    // isInit(room){
+    //
+    // },
 
     run(room){
         this.updateSpawning(room);
@@ -37,6 +36,7 @@ module.exports = {
         this.processSpawnQueue(room);
 
         this.runTowers(room);
+        this.runLinks(room);
 
         if(room.controller.level === 1 && !room.memory.level['1'].setRoleMin){
             let spawns = room.find(FIND_SOURCES);
@@ -48,28 +48,6 @@ module.exports = {
                 room.memory.roleMin.builder = 2;
                 room.memory.level['2'].setRoleMin = true;
             }
-
-            // if(!room.memory.level['2'].addExtensions){
-            //     let spawns = room.find(FIND_MY_SPAWNS);
-            //     let center = spawns[0].pos;
-            //     room.createConstructionSite(center.x + 3, center.y - 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 4, center.y - 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 5, center.y - 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 6, center.y - 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 7, center.y - 1, STRUCTURE_EXTENSION);
-            //     room.memory.level['2'].addExtensions = true;
-            // }
-
-            // if(
-            //     !room.memory.level['2'].upgradeCreeps
-            //     && room.find(FIND_MY_STRUCTURES)
-            //         .map((s) => { return s.structureType; })
-            //         .filter((s) => { return s === 'extension'; }).length === 5
-            // ){
-            //     let creeps = room.find(FIND_MY_CREEPS,{filter:(creep) => { return creep.memory.room === room.name; }})
-            //     util.setCreepProp(creeps,'level',2);
-            //     room.memory.level['2'].upgradeCreeps = true;
-            // }
 
             if(!room.memory.level['2'].addContainers &&
                 room.find(FIND_MY_STRUCTURES)
@@ -91,23 +69,6 @@ module.exports = {
 
         if(room.controller.level === 3 && !room.memory.level['3'].complete){
 
-            // if(!room.memory.level['3'].addExtensions){
-            //     let spawns = room.find(FIND_MY_SPAWNS);
-            //     let center = spawns[0].pos;
-            //     room.createConstructionSite(center.x + 3, center.y, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 4, center.y, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 5, center.y, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 6, center.y, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 7, center.y, STRUCTURE_ROAD);
-            //
-            //     room.createConstructionSite(center.x + 3, center.y + 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 4, center.y + 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 5, center.y + 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 6, center.y + 1, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 7, center.y + 1, STRUCTURE_EXTENSION);
-            //     room.memory.level['3'].addExtensions = true;
-            // }
-
             if(
                 !room.memory.level['3'].addContainers
                 && room.find(FIND_MY_STRUCTURES)
@@ -123,40 +84,34 @@ module.exports = {
             }
         }
 
-        if(room.controller.level === 4 && !room.memory.level['4'].complete){
-            // if(!room.memory.level['4'].addExtensions){
-            //     let spawns = room.find(FIND_MY_SPAWNS);
-            //     let center = spawns[0].pos;
-            //     room.createConstructionSite(center.x + 3, center.y + 2, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 4, center.y + 2, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 5, center.y + 2, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 6, center.y + 2, STRUCTURE_ROAD);
-            //     room.createConstructionSite(center.x + 7, center.y + 2, STRUCTURE_ROAD);
-            //
-            //     room.createConstructionSite(center.x + 3, center.y + 3, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 4, center.y + 3, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 5, center.y + 3, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 6, center.y + 3, STRUCTURE_EXTENSION);
-            //     room.createConstructionSite(center.x + 7, center.y + 3, STRUCTURE_EXTENSION);
-            //     room.memory.level['4'].addExtensions = true;
-            // }
-        }
-
     },
 
     runTowers(room){
-        let towers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType == STRUCTURE_TOWER});
+        let towers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_TOWER});
         for(let j = 0; j < towers.length; j++){
             let target = towers[j].pos.findClosestByRange(FIND_HOSTILE_CREEPS);
-            if(target != undefined){
+            if(target !== undefined){
                 towers[j].attack(target);
             }else{
                 target = towers[j].pos.findClosestByRange(FIND_MY_CREEPS,{filter:(c) => c.hits < c.maxHits});
-                if(target != undefined){
+                if(target !== undefined){
                     towers[j].heal(target);
                 }
             }
         }
+    },
+
+    runLinks(room){
+        let targetLink = Game.getObjectById(room.memory.targetLink);
+        let links = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_LINK})
+        if(targetLink){
+            for(let i = 0; i < links.length; i++){
+                if(links[i].store.getFreeCapacity(RESOURCE_ENERGY) === 0){
+                    links[i].transferEnergy(targetLink)
+                }
+            }
+        }
+
     },
 
     updateSpawning(room){
@@ -180,7 +135,7 @@ module.exports = {
             for(let i = 0; i < spawns.length; i++){
                 let build = room.memory.spawnQueue[0];
                 let res = util.spawnCreep(spawns[i],build.name,build.memory);
-                if(res == 0){
+                if(res === 0){
                     room.memory.spawning.push(room.memory.spawnQueue.shift());
                 }
             }
@@ -202,7 +157,7 @@ module.exports = {
     },
 
     updateSpawnQueue(room){
-        let roles = ['harvester','builder','maintenance','c-miner'];
+        let roles = ['harvester','builder','maintenance','d-maintenance','e-maintenance','c-miner'];
         for(var i = 0; i < roles.length; i++){
             let roleCreeps = room.find(FIND_MY_CREEPS,{
                 filter:(creep) => {
@@ -218,11 +173,25 @@ module.exports = {
         }
     },
 
+    queCreep(room,role,count = 1,options = {level:1,respawn:false}){
+        for(let i = 0; i < options.count; i++){
+            let memory = {'role':role,'level':options.level,'respawn':options.respawn}
+            memory = this.initRole(room,memory);
+            this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':memory})
+        }
+    },
+
+    pushSpawnQueue(room,build){
+        room.memory.spawnQueue.push(build);
+        console.log('Added '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue');
+    },
+
     initRole(room,memory){
         let res = {};
         switch(memory.role){
-            case 'harvester': res = this.initHarvester(room,memory);
-            default: res = memory;
+            case 'harvester': res = this.initHarvester(room,memory); break;
+            case 'c-miner': res = this.initCMiner(room,memory); break;
+            default: res = memory; break;
         }
         return res;
     },
@@ -241,9 +210,24 @@ module.exports = {
         return memory;
     },
 
-    pushSpawnQueue(room,build){
-        room.memory.spawnQueue.push(build);
-        console.log('Added '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue');
+    initCMiner(room,memory){
+        let rmContainers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTAINER});
+        let taken = util.getCreepPropsByRole(room, 'c-miner','target');
+        let available = [];
+        for(let i = 0; i < rmContainers.length; i++){
+            if(taken.includes(rmContainers[i].id)){ continue; }
+
+            let nearby = rmContainers[i].pos.findInRange(FIND_SOURCES,1);
+            if(nearby.length){
+                available.push(rmContainers[i].id);
+            }
+        }
+
+        if(available.length){
+            memory.target = available[0];
+        }
+
+      return memory;
     },
 
     getQueueCount(room,role = null){
