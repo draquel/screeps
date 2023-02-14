@@ -1,13 +1,32 @@
 var util = {
-    creepsNearPos: function(pos){
-        var creeps = Game.rooms[pos.roomName].find(FIND_MY_CREEPS);
-        var count = 0;
-        for(var i = 0; i < creeps.length; i++){
-            if(pos.isNearTo(creeps[i].pos)){
-                count++;
+
+    cleanupMemory: function(){
+        if(!Memory.creeps && !Memory.rooms){ return; }
+
+        if(Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
+            for(var name in Memory.creeps) {
+                if(!Game.creeps[name]) {
+                    if(Memory.creeps[name].respawn){
+                        let room = Game.rooms[Memory.creeps[name].room];
+                        let memory = Memory.creeps[name];
+                        console.log('Auto-Respawn: Queuing '+name+' in '+room.name);
+                        room.memory.spawnQueue.push({name:name, memory:memory})
+                    }else{
+                        console.log('Clearing Creep Memory: ', name);
+                    }
+                    delete Memory.creeps[name];
+                }
             }
         }
-        return count;
+
+        if(Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
+            for(var name in Memory.rooms) {
+                if (!Game.rooms[name]) {
+                    console.log('Clearing Room Memory: ', name);
+                    delete Memory.rooms[name];
+                }
+            }
+        }
     },
 
     getCreepProp: function(creeps = [],property = 'role'){
@@ -31,6 +50,10 @@ var util = {
 
     getCreepPropsByRole: function(room,role,property){
         return this.getCreepProp(this.getCreepsByRole(room,role),property);
+    },
+
+    setCreepPropsByRole: function(room,role,property,value){
+        return this.setCreepProp(this.getCreepsByRole(room,role),property,value);
     },
 
     openSpacesNearPos: function(pos,range = 1,array = false){
@@ -151,20 +174,43 @@ var util = {
                 3:[ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH],
                 4:[ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
             },
+            "healer": {
+                1:[HEAL,MOVE],
+                2:[HEAL,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+                3:[HEAL,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+                4:[HEAL,HEAL,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+                5:[HEAL,HEAL,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+            },
             "attack": {
                 1:[ATTACK,ATTACK,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH],
                 2:[ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
                 3:[ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH],
-                4:[ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+                4:[ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+                5:[ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
             },
             "ranged": {
                 1:[RANGED_ATTACK,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
                 2:[RANGED_ATTACK,ATTACK,RANGED_ATTACK,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
                 3:[RANGED_ATTACK,RANGED_ATTACK,RANGED_ATTACK,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
                 4:[RANGED_ATTACK,RANGED_ATTACK,RANGED_ATTACK,RANGED_ATTACK,MOVE,MOVE,MOVE,MOVE,MOVE,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH],
+            },
+            "claimer": {
+                1:[CLAIM,MOVE,MOVE,MOVE,MOVE],
+                2:[CLAIM,CLAIM,MOVE,MOVE,MOVE,MOVE]
             }
         }
         return buildLib[role][level];
+    },
+
+    creepsNearPos: function(pos){
+        var creeps = Game.rooms[pos.roomName].find(FIND_MY_CREEPS);
+        var count = 0;
+        for(var i = 0; i < creeps.length; i++){
+            if(pos.isNearTo(creeps[i].pos)){
+                count++;
+            }
+        }
+        return count;
     }
 }
 
