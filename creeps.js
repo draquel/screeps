@@ -1,4 +1,4 @@
-const util = require("./util.root");
+const util = require("./util");
 
 module.exports =  {
 
@@ -7,14 +7,14 @@ module.exports =  {
         this.runRole(creep);
     },
 
-    runOrders(creep){
-        if(creep.memory.orders.length === 0){
-            return false;
-        }
-
-        let order = creep.memory.orders.shift();
-
-    },
+    // runOrders(creep){
+    //     if(creep.memory.orders.length === 0){
+    //         return false;
+    //     }
+    //
+    //     let order = creep.memory.orders.shift();
+    //
+    // },
 
     runRole(creep){
         switch(creep.memory.role){
@@ -64,6 +64,7 @@ module.exports =  {
     runRHarvester(creep){
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
+            creep.memory.target = null;
             creep.say('🚚 Deliver');
         }
         if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
@@ -91,9 +92,13 @@ module.exports =  {
             }
         }else{
             if(creep.room.name !== creep.memory.room){
-                creep.moveTo(creep.pos.findClosestByRange(creep.room.findExitTo(creep.memory.room)),{visualizePathStyle: {stroke: '#ffffff'},reusePath:4});
+                creep.moveTo(creep.pos.findClosestByRange(creep.room.findExitTo(creep.memory.room)),{visualizePathStyle: {stroke: '#ffffff'}});
             }else{
+                // if(creep.pos.x == 0 || creep.pos.x == 49 || creep.pos.y == 0 || creep.pos.y == 49){
+                //     creep.moveTo(25,25)
+                // }
                 if(!this.refillBaseEnergy(creep,{links: true, storages: true,  containers: true})){
+                    console.log('fallback')
                     this.workerFallback(creep)
                 }
             }
@@ -168,24 +173,23 @@ module.exports =  {
 
     },
 
-    runMMaintenance(creep){
-        if(!creep.memory.working && creep.store[creep.memory.mineral] === 0) {
-            creep.memory.working = false;
-            creep.memory.target = null;
-            creep.say('⚡ Recharge');
-        }
-        if(creep.memory.working && creep.store.getFreeCapacity(creep.memory.mineral) === 0) {
-            creep.memory.working = true;
-            creep.say('🚚 Deliver');
-        }
-
-        if(creep.memory.working){
-            let targets = creep.room.find(FIND_STRUCTURES, {filter: (s) => s.structureType == STRUCTURE_CONTIANER && s.store.getUsedCapacity(creep.memory.mineral) > 0})
-
-        }else{
-
-        }
-    },
+    // runMMaintenance(creep){
+    //     if(!creep.memory.working && creep.store[creep.memory.mineral] === 0) {
+    //         creep.memory.working = false;
+    //         creep.memory.target = null;
+    //         creep.say('⚡ Recharge');
+    //     }
+    //     if(creep.memory.working && creep.store.getFreeCapacity(creep.memory.mineral) === 0) {
+    //         creep.memory.working = true;
+    //         creep.say('🚚 Deliver');
+    //     }
+    //
+    //     if(creep.memory.working){
+    //         let targets = creep.room.find(FIND_STRUCTURES, {filter: (s) => s.structureType ===  STRUCTURE_CONTIANER && s.store.getUsedCapacity(creep.memory.mineral) > 0})
+    //     }else{
+    //
+    //     }
+    // },
 
     runEMaintenance(creep){
         if(creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
@@ -220,8 +224,8 @@ module.exports =  {
                     tombs: true,
                     links: true,
                     sources: false,
-                    containers: (creep.room.controller.level > 5 ? false : true),
-                    storages: (targets.length > 0 ? true : false),
+                    containers: (creep.room.controller.level <= 5),
+                    storages: (targets.length > 0),
                     findOptions: {
                         filter: (s) => {
                              if(s.structureType === STRUCTURE_CONTAINER){
@@ -360,12 +364,12 @@ module.exports =  {
             }
         }
         else{
-            let containers = creep.room.find(FIND_STRUCTURES,{filter: (s) => s.structureType === STRUCTURE_CONTAINER})
+            let containers = creep.room.find(FIND_STRUCTURES,{filter: (s) => s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) > 100})
             this.collectEnergy(
                 creep,{
                     containers:true,
                     storages:true,
-                    sources:(containers.length ? false : true),
+                    sources:(!containers.length),
                     options:{
                         algorithm: "astar",
                         filter:(s) => {
@@ -469,7 +473,7 @@ module.exports =  {
         if(creep.memory.fighting) {
             let targetObj = Game.creeps[creep.memory.target];
             if (targetObj != null){
-                if(creep.room.name != targetObj.room.name){
+                if(creep.room.name !== targetObj.room.name){
                     creep.moveTo(creep.pos.findClosestByRange(creep.room.findExitTo(targetObj.room.name)), {visualizePathStyle: {stroke: '#ffaa00'},reusePath: 4});
                 }else if (!creep.pos.inRangeTo(targetObj,1)) {
                     creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'}, reusePath: 4});
@@ -498,7 +502,7 @@ module.exports =  {
             let targetObj = Game.getObjectById(creep.memory.target);
 
             if (targetObj != null){
-                if (creep.attack(targetObj) == ERR_NOT_IN_RANGE) {
+                if (creep.attack(targetObj) === ERR_NOT_IN_RANGE) {
                     creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'}, reusePath: 4});
                 }
             }else{
@@ -511,7 +515,7 @@ module.exports =  {
             }else{
                 //fallback behavior
                 //patrol
-                let targets = creep.room.find(FIND_STRUCTURES,{filter: (s) => s.structureType == STRUCTURE_CONTAINER || s.structureType == STRUCTURE_SPAWN})
+                let targets = creep.room.find(FIND_STRUCTURES,{filter: (s) => s.structureType === STRUCTURE_CONTAINER || s.structureType === STRUCTURE_SPAWN})
                 if(targets.length > 0){
 
                 }
@@ -539,7 +543,7 @@ module.exports =  {
             }else{
                 let targetObj = Game.getObjectById(creep.memory.target);
                 if (targetObj != null){
-                    if (creep.attack(targetObj) == ERR_NOT_IN_RANGE) {
+                    if (creep.attack(targetObj) === ERR_NOT_IN_RANGE) {
                         creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'}, reusePath: 4});
                     }
                 }else{
@@ -603,7 +607,7 @@ module.exports =  {
 
         var storages = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_STORAGE && s.store.getUsedCapacity(RESOURCE_ENERGY) > 10000 }});
         var containers = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(RESOURCE_ENERGY) > 200 }});
-        var links = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK && s.id == creep.room.memory.targetLink && s.store.getUsedCapacity(RESOURCE_ENERGY) > 80 }});
+        var links = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK && s.id === creep.room.memory.targetLink && s.store.getUsedCapacity(RESOURCE_ENERGY) > 80 }});
         var tombs = creep.room.find(FIND_TOMBSTONES,{filter:(t) => t.store.getUsedCapacity(RESOURCE_ENERGY) > 0})
         var drops = creep.room.find(FIND_DROPPED_RESOURCES,{filter:(d) => d.resourceType === RESOURCE_ENERGY, })
 
@@ -643,10 +647,23 @@ module.exports =  {
                 creep.moveTo(container, {visualizePathStyle: {stroke: '#ffaa00'},reusePath:4});
             }
         }else if(options.sources) {
-            var source = creep.pos.findClosestByRange(FIND_SOURCES,options.findOptions);
-            if(creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                creep.moveTo(source, {visualizePathStyle: {stroke: '#ffaa00'},reusePath:4});
+            var available = []
+            var sources = creep.room.find(FIND_SOURCES)
+            for(let i = 0; i < sources.length; i++){
+                if(util.openSpacesNearPos(sources[i].pos,1,false) >= util.creepsNearPos(sources[i].pos)){
+                    available.push(sources[i]);
+                }
             }
+            if(available.length) {
+                var source = creep.pos.findClosestByPath(available);
+                if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+                    creep.moveTo(source, {visualizePathStyle: {stroke: '#ffaa00'}, reusePath: 4});
+                }
+            }
+            // var source = creep.pos.findClosestByPath(FIND_SOURCES);
+            // if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
+            //     creep.moveTo(source, {visualizePathStyle: {stroke: '#ffaa00'}, reusePath: 4});
+            // }
         }else{
             //console.log("Creep: "+creep.name+" - No Energy target")
             return false;

@@ -1,4 +1,4 @@
-const util = require('./util.root');
+const util = require('./util');
 const rooms = require('./rooms');
 const creeps = require('./creeps');
 

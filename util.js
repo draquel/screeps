@@ -3,12 +3,22 @@ var util = {
     cleanupMemory: function(){
         if(!Memory.creeps && !Memory.rooms){ return; }
 
+        if(Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
+            for(let name in Memory.rooms) {
+                if (!Game.rooms[name]) {
+                    console.log('Clearing Room Memory: ', name);
+                    delete Memory.rooms[name];
+                }
+            }
+        }
+
         if(Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
-            for(var name in Memory.creeps) {
+            for(let name in Memory.creeps) {
                 if(!Game.creeps[name]) {
-                    if(Memory.creeps[name].respawn){
+                    if(Memory.creeps[name].respawn && Object.keys(Memory.rooms).includes(Memory.creeps[name].room)){
                         let room = Game.rooms[Memory.creeps[name].room];
                         let memory = Memory.creeps[name];
+                        if(room === undefined){ continue; }
                         console.log('Auto-Respawn: Queuing '+name+' in '+room.name);
                         room.memory.spawnQueue.push({name:name, memory:memory})
                     }else{
@@ -19,14 +29,6 @@ var util = {
             }
         }
 
-        if(Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
-            for(var name in Memory.rooms) {
-                if (!Game.rooms[name]) {
-                    console.log('Clearing Room Memory: ', name);
-                    delete Memory.rooms[name];
-                }
-            }
-        }
     },
 
     getCreepProp: function(creeps = [],property = 'role'){
@@ -41,9 +43,9 @@ var util = {
     },
 
     getCreepsByRole: function(room,role){
-        let creeps = room.find(FIND_MY_CREEPS,{filter: (c) => c.memory.role == role});
-        let spawning = room.memory.spawning.filter((c) => c.memory.role == role);
-        let queued = room.memory.spawnQueue.filter((c) => c.memory.role == role);
+        let creeps = room.find(FIND_MY_CREEPS,{filter: (c) => c.memory.role === role});
+        let spawning = room.memory.spawning.filter((c) => c.memory.role === role);
+        let queued = room.memory.spawnQueue.filter((c) => c.memory.role === role);
 
         return [...creeps,...spawning,...queued];
     },
@@ -61,7 +63,7 @@ var util = {
         var openSpaces = 9;
         var spaces = [];
         for(var i = 0; i < posDetails.length; i++){
-            if(posDetails[i].type == "constructionSite" || posDetails[i].type == "structure" || (posDetails[i].type == "terrain" && posDetails[i].terrain == "wall")){
+            if((posDetails[i].type === "structure" && posDetails[i].structure.structureType === STRUCTURE_WALL) || (posDetails[i].type === "terrain" && posDetails[i].terrain === "wall")){
                 openSpaces--;
                 continue;
             }
@@ -69,6 +71,7 @@ var util = {
         }
         return (array ? spaces : openSpaces);
     },
+
     calcCreepBuildEnergy: function(build){
         var energy = 0;
         for(var i = 0; i < build.length; i++){
@@ -85,6 +88,7 @@ var util = {
         }
         return energy;
     },
+
     spawnCreep: function(spawn,name,memory){
         if(!memory.level){ memory.level = null; }
         if(!memory.role){ memory.role = null; }else{ if(!memory.level){ memory.level = 1; } }
@@ -103,20 +107,21 @@ var util = {
             return ERR_NOT_ENOUGH_ENERGY;
         }
     },
-    nameGenerator: function(){
-        var names = ['Adam','Al','Alan','Archibald','Buzz','Carson','Chad','Charlie','Chris','Chuck','Dean','Ed','Edan','Edlu','Frank','Franklin','Gus','Hans','Jack','James','Jim','Kirk','Kurt','Lars','Luke','Mac','Matt','Phil','Randall','Scott','Scott','Sean','Steve','Tom','Will'];
-        var prefixes = ['Ad','Al','Ald','An','Bar','Bart','Bil','Billy-Bob','Bob','Bur','Cal','Cam','Chad','Cor','Dan','Der','Des','Dil','Do','Don','Dood','Dud','Dun','Ed','El','En','Er','Fer','Fred','Gene','Geof','Ger','Gil','Greg','Gus','Had','Hal','Han','Har','Hen','Her','Hud','Jed','Jen','Jer','Joe','John','Jon','Jor','Kel','Ken','Ker','Kir','Lan','Lem','Len','Lo','Lod','Lu','Lud','Mac','Mal','Mat','Mel','Mer','Mil','Mit','Mun','Ned','Neil','Nel','New','Ob','Or','Pat','Phil','Ray','Rib','Rich','Ro','Rod','Ron','Sam','Sean','See','Shel','Shep','Sher','Sid','Sig','Son','Thom','Thomp','Tom','Wehr','Wil'];
-        var suffixes = ['ald','bal','bald','bart','bas','berry','bert','bin','ble','bles','bo','bree','brett','bro','bur','burry','bus','by','cal','can','cas','cott','dan','das','den','din','do','don','dorf','dos','dous','dred','drin','dun','ely','emone','emy','eny','fal','fel','fen','field','ford','fred','frey','frey','frid','frod','fry','furt','gan','gard','gas','gee','gel','ger','gun','hat','ing','ke','kin','lan','las','ler','ley','lie','lin','lin','lo','lock','long','lorf','ly','mal','man','min','ming','mon','more','mund','my','nand','nard','ner','ney','nie','ny','oly','ory','rey','rick','rie','righ','rim','rod','ry','sby','sel','sen','sey','ski','son','sted','ster','sy','ton','top','trey','van','vey','vin','vis','well','wig','win','wise','zer','zon','zor'];
-        var algRGN = Math.random();
 
-        var generated = "";
+    nameGenerator: function(){
+        let names = ['Adam','Al','Alan','Archibald','Buzz','Carson','Chad','Charlie','Chris','Chuck','Dean','Ed','Edan','Edlu','Frank','Franklin','Gus','Hans','Jack','James','Jim','Kirk','Kurt','Lars','Luke','Mac','Matt','Phil','Randall','Scott','Scott','Sean','Steve','Tom','Will'];
+        let prefixes = ['Ad','Al','Ald','An','Bar','Bart','Bil','Billy-Bob','Bob','Bur','Cal','Cam','Chad','Cor','Dan','Der','Des','Dil','Do','Don','Dood','Dud','Dun','Ed','El','En','Er','Fer','Fred','Gene','Geof','Ger','Gil','Greg','Gus','Had','Hal','Han','Har','Hen','Her','Hud','Jed','Jen','Jer','Joe','John','Jon','Jor','Kel','Ken','Ker','Kir','Lan','Lem','Len','Lo','Lod','Lu','Lud','Mac','Mal','Mat','Mel','Mer','Mil','Mit','Mun','Ned','Neil','Nel','New','Ob','Or','Pat','Phil','Ray','Rib','Rich','Ro','Rod','Ron','Sam','Sean','See','Shel','Shep','Sher','Sid','Sig','Son','Thom','Thomp','Tom','Wehr','Wil'];
+        let suffixes = ['ald','bal','bald','bart','bas','berry','bert','bin','ble','bles','bo','bree','brett','bro','bur','burry','bus','by','cal','can','cas','cott','dan','das','den','din','do','don','dorf','dos','dous','dred','drin','dun','ely','emone','emy','eny','fal','fel','fen','field','ford','fred','frey','frey','frid','frod','fry','furt','gan','gard','gas','gee','gel','ger','gun','hat','ing','ke','kin','lan','las','ler','ley','lie','lin','lin','lo','lock','long','lorf','ly','mal','man','min','ming','mon','more','mund','my','nand','nard','ner','ney','nie','ny','oly','ory','rey','rick','rie','righ','rim','rod','ry','sby','sel','sen','sey','ski','son','sted','ster','sy','ton','top','trey','van','vey','vin','vis','well','wig','win','wise','zer','zon','zor'];
+        let algRGN = Math.random();
+
+        let generated;
         if(algRGN <= 0.05){
             generated = names[Math.floor(Math.random()*names.length)];
         }else{
             generated = prefixes[Math.floor(Math.random()*prefixes.length)] + suffixes[Math.floor(Math.random()*suffixes.length)];
         }
 
-        var existing = Object.keys(Game.creeps);
+        let existing = Object.keys(Game.creeps);
         if(existing.includes(generated)){
             generated = this.nameGenerator();
         }

@@ -1,4 +1,4 @@
-const util = require("./util.root");
+const util = require("./util");
 
 module.exports = {
 
@@ -38,12 +38,17 @@ module.exports = {
         let towers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_TOWER});
         for(let j = 0; j < towers.length; j++){
             let target = towers[j].pos.findClosestByRange(FIND_HOSTILE_CREEPS);
-            if(target !== undefined){
+            if(target !== null){
                 towers[j].attack(target);
             }else{
                 target = towers[j].pos.findClosestByRange(FIND_MY_CREEPS,{filter:(c) => c.hits < c.maxHits});
-                if(target !== undefined){
+                if(target !== null){
                     towers[j].heal(target);
+                }else{
+                    target = towers[j].pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_WALL && s.hits < s.maxHits});
+                    if(target !== null){
+                        towers[j].heal(target);
+                    }
                 }
             }
         }
@@ -63,7 +68,7 @@ module.exports = {
     },
 
     buildBase(room){
-        if(room.controller.owner.username != 'Deep160'){ return }
+        if(room.controller.owner !== undefined && room.controller.owner.username !== 'Deep160'){ return }
 
         if(room.controller.level === 1 && !room.memory.level['1'].complete){
             //spawn harvesters
@@ -112,8 +117,9 @@ module.exports = {
             }
 
             if(!room.memory.level['3'].upgradeCreeps && room.memory.level['3'].extensions){
-                util.setCreepPropsByRole(room,'harvesters','level',2)
-                util.setCreepPropsByRole(room,'builders','level',2)
+                util.setCreepPropsByRole(room,'harvester','level',2)
+                util.setCreepPropsByRole(room,'builder','level',2)
+                console.log('Creeps upgraded to Level 2')
                 room.memory.level['3'].upgradeCreeps = true
             }
 
@@ -125,6 +131,13 @@ module.exports = {
             //switch harvesters to c-miners, add e-maint, upgrade creeps,
             if(!room.memory.level['4'].extensions){
                 room.memory.level['4'].extensions = this.availableExtensions(room) === 0
+            }
+
+            if(!room.memory.level['4'].upgradeCreeps && room.memory.level['4'].extensions){
+                util.setCreepPropsByRole(room,'maintenance','level',2)
+                util.setCreepPropsByRole(room,'harvester','respawn',false)
+                this.queCreep(room,'c-miner',2,{respawn:true,level:3})
+                room.memory.level['4'].upgradeCreeps = true
             }
         }
         if(room.controller.level === 5 && !room.memory.level['5'].complete){
@@ -156,7 +169,7 @@ module.exports = {
         let creeps = room.find(FIND_MY_CREEPS);
         for(let i = 0; i < creeps.length; i++){
             for(let j = 0; j < room.memory.spawning.length; j++){
-                if(creeps[i].name === room.memory.spawning[j].name || room.memory.spawning[j].name == undefined){
+                if(creeps[i].name === room.memory.spawning[j].name || room.memory.spawning[j].name === undefined){
                     room.memory.spawning.splice(j,1);
                 }
             }
