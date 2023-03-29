@@ -9,7 +9,7 @@ module.exports = {
                 level:{
                     '1':{spawnHarvesters:false,complete:false},
                     '2':{spawnBuilders:false,extensions:false,complete:false},
-                    '3':{spawnMaintenance:false,extensions:false,containers:false,complete:false},
+                    '3':{spawnMaintenance:false,extensions:false,containers:false,containersBuilt:false,upgradeCreeps1:false,upgradeCreeps2:false,complete:false},
                     '4':{spawnCMiners:false,extensions:false,complete:false},
                     '5':{extensions:false,complete:false},
                     '6':{extensions:false,complete:false},
@@ -64,7 +64,6 @@ module.exports = {
                 }
             }
         }
-
     },
 
     buildBase(room){
@@ -92,12 +91,13 @@ module.exports = {
             }
 
             if(room.memory.level['2'].extensions && room.memory.level['2'].spawnBuilders){
+                util.setCreepPropsByRole(room,'builder','level',2)
                 room.memory.level['2'].complete = true;
             }
         }
 
         if(room.controller.level === 3 && !room.memory.level['3'].complete){
-            //build extensions, place\build source containers, upgrade creeps to lvl 2, spawn maintenance
+            //build extensions, place\build source containers, switch harvesters to c-miners, spawn maintenance
             if(!room.memory.level['3'].extensions){
                 room.memory.level['3'].extensions = this.availableExtensions(room) === 0
             }
@@ -111,22 +111,27 @@ module.exports = {
                 room.memory.level['3'].containers = true;
             }
 
-            if(!room.memory.level['3'].spawnMaintenance && room.memory.level['3'].containers){
+            if(!room.memory.level['3'].containersBuilt && room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER }}).length >= room.find(FIND_SOURCES).length){
+                room.memory.level['3'].containersBuilt = true;
+            }
+
+            if(!room.memory.level['3'].spawnMaintenance && room.memory.level['3'].containersBuilt){
                 this.queCreep(room,'maintenance',2,{respawn:true})
                 room.memory.level['3'].spawnMaintenance = true;
             }
 
-            if(!room.memory.level['3'].upgradeCreeps && room.memory.level['3'].extensions){
-                util.setCreepPropsByRole(room,'harvester','level',2)
-                util.setCreepPropsByRole(room,'builder','level',2)
-                console.log('Creeps upgraded to Level 2')
-                room.memory.level['3'].upgradeCreeps = true
+            if(!room.memory.level['3'].upgradeCreeps1 && room.memory.level['3'].containersBuilt){
+                util.setCreepPropsByRole(room,'harvester','respawn',false)
+                this.queCreep(room,'c-miner',room.find(FIND_SOURCES).length,{respawn:true,level:2})
+                console.log('Upgraded Harvesters to C-Miners')
+                room.memory.level['3'].upgradeCreeps1 = true
             }
 
             if(room.memory.level['3'].extensions && room.memory.level['3'].containers && room.memory.level['3'].upgradeCreeps && room.memory.level['2'].spawnMaintenance){
                 room.memory.level['3'].complete = true;
             }
         }
+
         if(room.controller.level === 4 && !room.memory.level['4'].complete){
             //switch harvesters to c-miners, add e-maint, upgrade creeps,
             if(!room.memory.level['4'].extensions){
@@ -134,12 +139,14 @@ module.exports = {
             }
 
             if(!room.memory.level['4'].upgradeCreeps && room.memory.level['4'].extensions){
-                util.setCreepPropsByRole(room,'maintenance','level',2)
-                util.setCreepPropsByRole(room,'harvester','respawn',false)
-                this.queCreep(room,'c-miner',2,{respawn:true,level:3})
+                util.setCreepPropsByRole(room,'c-miner','level',3)
+                util.setCreepPropsByRole(room,'r-harvester','level',3)
+                util.setCreepPropsByRole(room,'builder','level',3)
+                util.setCreepPropsByRole(room,'maintenance','level',3)
                 room.memory.level['4'].upgradeCreeps = true
             }
         }
+
         if(room.controller.level === 5 && !room.memory.level['5'].complete){
             //place target link
             if(!room.memory.level['5'].extensions){
@@ -206,10 +213,10 @@ module.exports = {
         return false;
     },
 
-    queCreep(room,role,count = 1,options = {level:1,respawn:false,target:null,target_room:null}){
+    queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetEnergy:null}){
         let succ = false
         for(let i = 0; i < count; i++){
-            let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'target_room':options.target_room}
+            let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'targetRoom':options.targetRoom}
             succ = this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)})
         }
         return succ
@@ -223,28 +230,28 @@ module.exports = {
     initRole(room,memory){
         let res = {};
         switch(memory.role){
-            case 'harvester': res = this.initHarvester(room,memory); break;
+            //case 'harvester': res = this.initHarvester(room,memory); break;
             case 'c-miner': res = this.initCMiner(room,memory); break;
             default: res = memory; break;
         }
         return res;
     },
 
-    initHarvester(room,memory){
-        if(memory.target != null){ return memory; }
-
-        let sourceIds  = room.find(FIND_SOURCES).map((s) => { return s.id; });
-        let takenTargets = util.getCreepPropsByRole(room, 'harvester','target');
-
-        let available = [];
-        for(var i = 0; i < sourceIds.length; i++){
-            if(takenTargets.includes(sourceIds[i])){ continue; }
-            available.push(sourceIds[i]);
-        }
-
-        memory.target = (available.length ? available[0] : sourceIds[0] ) ;
-        return memory;
-    },
+    // initHarvester(room,memory){
+    //     if(memory.target != null){ return memory; }
+    //
+    //     let sourceIds  = room.find(FIND_SOURCES).map((s) => { return s.id; });
+    //     let takenTargets = util.getCreepPropsByRole(room, 'harvester','target');
+    //
+    //     let available = [];
+    //     for(var i = 0; i < sourceIds.length; i++){
+    //         if(takenTargets.includes(sourceIds[i])){ continue; }
+    //         available.push(sourceIds[i]);
+    //     }
+    //
+    //     memory.target = (available.length ? available[0] : sourceIds[0] ) ;
+    //     return memory;
+    // },
 
     initCMiner(room,memory){
         let rmContainers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTAINER});
@@ -268,6 +275,13 @@ module.exports = {
 
     availableExtensions(room){
         return ((room.controller.level - 1) * 5) - room.find(FIND_MY_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_EXTENSION}).length
+    },
+
+    //Unused, but useful...
+
+    clearQue(room){
+        console.log('Clearing Spawn Queue')
+        room.memory.spawnQueue = []
     },
 
     getQueueCount(room,role = null){

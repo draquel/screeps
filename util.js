@@ -133,6 +133,10 @@ var util = {
     getRoleBuild(role,level = 1){
         //console.log('role:'+role+' - '+'level:'+level);
         var buildLib = {
+            "scout":{
+                1:[MOVE,MOVE,MOVE,MOVE,MOVE],
+                2:[WORK,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE]
+            },
             "harvester":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
                 2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE]
@@ -204,7 +208,7 @@ var util = {
                 2:[CLAIM,CLAIM,MOVE,MOVE,MOVE,MOVE]
             }
         }
-        return buildLib[role][level];
+        return buildLib[role.toLowerCase()][level];
     },
 
     creepsNearPos: function(pos){

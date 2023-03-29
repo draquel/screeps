@@ -15,13 +15,20 @@ Example:
 
 ## Main
 
+Game driver module.
+
 ## Util
+
+Generic functionality which applies to multiple modules.
 
 ## Rooms
 
 The Rooms module enables spawn queues, runs towers and links. Labs are next to be added
 
 ### Spawn Queues
+    
+Each Room has a spawn queue in its memory used to handle auto-respawn, dynamic spawning and managing creeps based on their roles.
 
 ## Creeps
 
+The Creeps Module handles creep roles.
