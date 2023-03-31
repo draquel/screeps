@@ -32,7 +32,7 @@ var util = {
     },
 
     getCreepProp: function(creeps = [],property = 'role'){
-        return creeps.map((c) => c.memory[property]);
+        return creeps.map((c) => c.memory[property]).filter(x => !!x);
     },
 
     setCreepProp: function(creeps = Game.creeps,property = null,value = null){

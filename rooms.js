@@ -16,6 +16,7 @@ module.exports = {
                     '7':{extensions:false,complete:false},
                     '8':{extensions:false,complete:false}
                 },
+                reusePath:4,
                 targetLink:null,
                 spawning:[],
                 spawnQueue:[]
@@ -142,7 +143,6 @@ module.exports = {
                 util.setCreepPropsByRole(room,'c-miner','level',3)
                 util.setCreepPropsByRole(room,'r-harvester','level',3)
                 util.setCreepPropsByRole(room,'builder','level',3)
-                util.setCreepPropsByRole(room,'maintenance','level',3)
                 room.memory.level['4'].upgradeCreeps = true
             }
         }
