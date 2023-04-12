@@ -1,6 +1,7 @@
 //const util = require("./util");
 const work = require("./creeps.work");
 const combat = require("./creeps.combat");
+const util = require("./util");
 
 module.exports =  {
 
@@ -31,9 +32,8 @@ module.exports =  {
             case 'builder': this.runBuilder(creep); break;
             case 'maintenance': this.runMaintenance(creep); break;
             case 'd-maintenance': this.runDMaintenance(creep); break;
-            case 'e-maintenance': this.runEMaintenance(creep); break;
-            case 'c-miner': this.runCMiner(creep); break;
-
+            case 'transporter': this.runTransporter(creep); break;
+            case 'miner': this.runCMiner(creep); break;
             case 'healer': this.runHealer(creep); break;
             case 'attack': this.runAttack(creep); break;
             case 'defend': this.runDefend(creep); break;
@@ -59,18 +59,28 @@ module.exports =  {
     runHarvester(creep){
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
+            creep.memory.target = null;
+            creep.memory.targetDeliver = null;
             creep.say('🚚 Deliver');
         }
         if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
             creep.memory.working = true;
+            creep.memory.targetCollect = null;
             creep.say('🔄 Harvest');
+        }
+
+        if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
+            this.moveToRoom(creep)
+            return
         }
 
         if(creep.memory.working){
             work.collectResource(creep,{sources:true,drops:true,tombs:true})
         }else{
-            if(!work.refillBaseEnergy(creep,{storages: false, containers: true})){
-                work.workerUpgrade(creep)
+            if(!work.refillBaseEnergy(creep,{storages: false, containers: false, links:false})) {
+                if (!work.refillBaseEnergy(creep, {storages: false, containers: true, links:false})) {
+                    work.workerUpgrade(creep)
+                }
             }
         }
     },
@@ -79,6 +89,7 @@ module.exports =  {
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
             creep.memory.target = null;
+            creep.memory.targetDeliver = null;
             creep.say('🚚 Deliver');
         }
         if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
@@ -103,16 +114,22 @@ module.exports =  {
         if(creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
             creep.memory.working = false;
             creep.memory.target = null;
+            creep.memory.targetDeliver = null;
             creep.say('⚡ Recharge');
         }
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
-            creep.memory.targetEnergy = null;
+            creep.memory.targetCollect = null;
             creep.say('🔧 Repair');
         }
 
+        if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
+            this.moveToRoom(creep)
+            return
+        }
+
         if(creep.memory.working){
-            if(!work.refillBaseEnergy(creep,{storages: false, containers: false})){
+            if(!work.refillBaseEnergy(creep,{terminal:false, storages: false, containers: false, links:false})){
                 if(!work.maintainBaseStructures(creep)){
                     let targetObj = creep.pos.findClosestByRange(FIND_STRUCTURES,{
                         algorithm: "astar",
@@ -128,54 +145,53 @@ module.exports =  {
                 }
             }
         }else{
-            work.collectResource(creep,{drops: false, tombs: true, sources: true, containers: true, storages: true})
+            work.collectResource(creep,{drops: true, tombs: true, sources: true, containers: true, storages: true})
         }
 
     },
 
-    runEMaintenance(creep){
-        if(creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
+    runTransporter(creep){
+        let resource = this.getTargetResource(creep)
+        if(creep.memory.working && creep.store[resource] === 0) {
             creep.memory.working = false;
-            creep.memory.target = null;
-            creep.say('⚡ Recharge');
+            creep.memory.targetDeposit = null;
+            creep.say('🚚 Load');
         }
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
-            creep.memory.targetEnergy = null;
+            creep.memory.targetCollect = null;
             creep.say('🚚 Deliver');
         }
 
+
         if(creep.memory.working){
-            if(!work.refillBaseEnergy(creep,{storages: false, containers: false})){
-                work.refillBaseEnergy(creep,{storages: true, containers: false})
+            if(!work.refillBaseResources(creep, {terminal:true,links:true,storages:false,containers:false},resource)){
+                work.refillBaseResources(creep, {terminal:false,links:false,storages:true,containers:false},resource)
             }
         }else{
             let targets = creep.room.find(FIND_STRUCTURES, {
                 algorithm: "astar",
                 filter: (s) => {
-                    return (s.structureType === STRUCTURE_SPAWN ||
-                            s.structureType === STRUCTURE_EXTENSION||
-                            s.structureType === STRUCTURE_TOWER) &&
-                        s.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
+                    return (s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(resource) > 0 ||
+                        s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(resource) > 0 ||
+                        s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(resource) > 0 ||
+                        s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 7500;
                 }
             });
 
-            let res = work.collectResource(
+            work.collectResource(
                 creep,
                 {
                     drops: true,
                     tombs: true,
-                    links: true,
+                    links: false,
                     sources: false,
-                    containers: (creep.room.controller.level <= 5),
-                    storages: (targets.length > 0)
-                }
+                    containers: true,
+                    storages: targets.length > 0
+                },
+                resource
             )
-            if(!res){
-                //return to spawn area if not nearby
-            }
         }
-
     },
 
     runDMaintenance(creep){
@@ -186,13 +202,13 @@ module.exports =  {
         }
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
-            creep.memory.targetEnergy = null;
+            creep.memory.targetCollect = null;
             creep.say('🔧 repair');
         }
 
         if(creep.memory.working){
             if(!work.maintainBaseDefenses(creep)){
-                if(!work.refillBaseEnergy(creep,{storages: false, containers: false})){
+                if(!work.refillBaseEnergy(creep,{storages: false, containers: false, links: false})){
                     work.workerUpgrade(creep)
                 }
             }
@@ -217,8 +233,13 @@ module.exports =  {
         }
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
-            creep.memory.targetEnergy = null;
+            creep.memory.targetCollect = null;
             creep.say('🔨 build');
+        }
+
+        if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
+            this.moveToRoom(creep)
+            return
         }
 
         if(creep.memory.working) {
@@ -235,6 +256,9 @@ module.exports =  {
                 creep,{
                     containers:true,
                     storages:true,
+                    links:true,
+                    tombs:false,
+                    drops:false,
                     sources:(!containers.length)
                 }
             );
@@ -242,17 +266,18 @@ module.exports =  {
     },
 
     runCMiner(creep){
+        let resource = this.getTargetResource(creep)
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
             //creep.say('🚚 Deliver');
         }
-        if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
+        if(!creep.memory.working && creep.store[resource] === 0) {
             creep.memory.working = true;
             //creep.say('🔦 Mining');
         }
 
         if(!creep.memory.target){
-            var targetObj = creep.pos.findClosestByPath(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 },algorithm: "astar"});
+            let targetObj = creep.pos.findClosestByPath(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(resource) > 0 },algorithm: "astar"});
             creep.memory.target = targetObj.id;
         }else{
             targetObj = Game.getObjectById(creep.memory.target);
@@ -260,30 +285,35 @@ module.exports =  {
 
         if(creep.memory.working && targetObj != null){
             if(!creep.pos.isEqualTo(targetObj.pos)) {
-                creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'},reusePath:4});
+                util.moveToTarget(creep,{showPath: true,pathColor: '#ffffff'},targetObj)
+
             }else{
-                var source = creep.pos.findClosestByRange(FIND_SOURCES,{algorithm: "astar"});
-                if(source && creep.pos.inRangeTo(source,1)) {
-                    if (creep.harvest(source) === ERR_NOT_IN_RANGE) {
-                        console.log('C-Miner ' + creep.name + ': Source Out of Range!!!')
-                    }
+                let target
+
+                if(resource === RESOURCE_ENERGY){
+                    //console.log('miner ['+creep.name+']: set energy target')
+                    target = creep.pos.findClosestByRange(FIND_SOURCES,{algorithm: "astar"});
                 }else{
-                    var mine = creep.pos.findClosestByRange(FIND_MINERALS,{algorithm: "astar"});
-                    if (creep.harvest(mine) === ERR_NOT_IN_RANGE) {
-                        console.log('C-Miner ' + creep.name + ': Source Out of Range!!!')
+                    //console.log('miner ['+creep.name+']: set mineral target')
+                    target = creep.pos.findClosestByRange(FIND_MINERALS,{algorithm: "astar",filter: (r) => { return r.mineralType === resource}});
+                }
+
+                if(target && creep.pos.inRangeTo(target,1)) {
+                    if (creep.harvest(target) === ERR_NOT_IN_RANGE) {
+                        console.log('Miner ' + creep.name + ': Target Out of Range!!!')
                     }
                 }
             }
         }else{
-            let res = creep.transfer(targetObj, RESOURCE_ENERGY)
+            let res = creep.transfer(targetObj, resource)
             if(res === ERR_NOT_IN_RANGE) {
                 creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'},reusePath:4});
-                console.log('C-Miner '+ creep.name+': Container Out of Range!!!')
+                console.log('Miner '+ creep.name+': Container Out of Range!!!')
             }
             if(res === ERR_FULL){
                 let link = creep.pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK }});
                 if(link && creep.pos.inRangeTo(link.pos,1)){
-                    creep.transfer(link, RESOURCE_ENERGY)
+                    creep.transfer(link, resource)
                 }
             }
             let resources = creep.room.find(FIND_DROPPED_RESOURCES,{filter:(r) => r.pos.isNearTo(creep) })
@@ -360,7 +390,7 @@ module.exports =  {
         }else{
             let target = combat.getAttackTarget(creep)
             if(target != null){
-                creep.memory.target = target
+                creep.memory.target = target.id
             }else{
                 //fallback behavior
             }
@@ -371,7 +401,7 @@ module.exports =  {
     runAttack(creep){
         if(creep.memory.fighting && creep.memory.target === null) {
             creep.memory.fighting = false;
-            creep.say('🚚 Defend');
+            //creep.say('🚚 Defend');
         }
         if(!creep.memory.fighting && creep.memory.target !== null) {
             creep.memory.fighting = true;
@@ -381,6 +411,7 @@ module.exports =  {
         if(creep.memory.fighting){
             if(this.moveToRoom(creep)){
                 let targetObj = Game.getObjectById(creep.memory.target);
+                //console.log(creep.name + ' Attacking '+ targetObj.name == null ? targetObj.id : targetObj.name )
                 if (targetObj != null){
                     combat.combatAttack(creep,targetObj)
                 }else{
@@ -388,10 +419,13 @@ module.exports =  {
                 }
             }
         }else{
-            if(this.moveToRoom(creep)){
+            let moveRes = this.moveToRoom(creep)
+            //console.log(moveRes)
+            if(moveRes){
                 let target = combat.getAttackTarget(creep)
                 if(target != null){
-                    creep.memory.target = target
+                    creep.memory.target = target.id
+                    creep.memory.targetRoom = target.room.id
                 }else{
                     //fallback behavior
                 }
@@ -416,20 +450,22 @@ module.exports =  {
     },
 
     moveToRoom(creep,room = creep.memory.targetRoom){
+        if(creep.memory.currentRoom !== creep.room.name && (creep.pos.x*creep.pos.y === 0 || creep.pos.x === 49 || creep.pos.y === 49)){
+            creep.moveTo(new RoomPosition(25,25,creep.room.name))
+            creep.memory.currentRoom = creep.room.name
+        }
         if(!this.inTargetRoom(creep,room)) {
-            creep.moveTo(creep.pos.findClosestByPath(creep.room.findExitTo(room)), {
-                visualizePathStyle: {stroke: '#0c02d1'},
-                reusePath: creep.room.memory.reusePath
-            });
-            //console.log('moveToRoom: Moving to Room '+creep.memory.targetRoom)
+            util.moveToTarget(creep,{showPath: true, pathColor: "#0c02d1"},creep.pos.findClosestByPath(creep.room.findExitTo(room)))
+            //console.log('moveToRoom: Moving To Room '+creep.memory.targetRoom)
             return false;
         }else{
-            if(creep.pos.x*creep.pos.y === 0 || creep.pos.x === 49 || creep.pos.y === 49){
-                creep.moveTo(new RoomPosition(25,25,creep.memory.targetRoom))
-            }
             //console.log('moveToRoom: Found Room '+creep.memory.targetRoom)
             return true;
         }
+    },
+
+    getTargetResource(creep) {
+        return creep.memory.targetResource == null ? RESOURCE_ENERGY : creep.memory.targetResource
     }
 
 }

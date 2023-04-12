@@ -3,52 +3,45 @@ const util = require("./util");
 module.exports = {
 
     initMem(room){
-        if(!room.memory.level){
-            console.log('Initializing Room Memory: ' + room.name );
-            room.memory = {
-                level:{
-                    '1':{spawnHarvesters:false,complete:false},
-                    '2':{spawnBuilders:false,extensions:false,complete:false},
-                    '3':{spawnMaintenance:false,extensions:false,containers:false,containersBuilt:false,upgradeCreeps1:false,upgradeCreeps2:false,complete:false},
-                    '4':{spawnCMiners:false,extensions:false,complete:false},
-                    '5':{extensions:false,complete:false},
-                    '6':{extensions:false,complete:false},
-                    '7':{extensions:false,complete:false},
-                    '8':{extensions:false,complete:false}
-                },
-                reusePath:4,
-                targetLink:null,
-                spawning:[],
-                spawnQueue:[]
-            };
+        if(!room.memory.showPath){
+            console.log('Initializing Room Memory: ' + room.name )
+        }
+        room.memory = {
+            reusePath:room.memory.reusePath === undefined ? 4 : room.memory.reusePath,
+            showPath:room.memory.showPath === undefined ? true : room.memory.showPath,
+            targetLink:room.memory.targetLink === undefined ? null : room.memory.targetLink,
+            spawning:room.memory.spawning === undefined ? [] : room.memory.spawning,
+            spawnQueue:room.memory.spawnQueue === undefined ? [] : room.memory.spawnQueue,
         }
     },
 
     run(room){
-        this.initMem(room);
+        this.initMem(room)
 
-        this.processSpawnQueue(room);
+        if(Game.time%40 === 0){
+            this.runMiningCrew(room)
+        }
+        this.processSpawnQueue(room)
 
-        this.runTowers(room);
-        this.runLinks(room);
+        this.runTowers(room)
+        this.runLinks(room)
 
-        this.buildBase(room);
     },
 
     runTowers(room){
         let towers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_TOWER});
         for(let j = 0; j < towers.length; j++){
-            let target = towers[j].pos.findClosestByRange(FIND_HOSTILE_CREEPS);
+            let target = towers[j].pos.findClosestByRange(FIND_HOSTILE_CREEPS)
             if(target !== null){
-                towers[j].attack(target);
+                towers[j].attack(target)
             }else{
-                target = towers[j].pos.findClosestByRange(FIND_MY_CREEPS,{filter:(c) => c.hits < c.maxHits});
+                target = towers[j].pos.findClosestByRange(FIND_MY_CREEPS,{filter:(c) => c.hits < c.maxHits})
                 if(target !== null){
-                    towers[j].heal(target);
+                    towers[j].heal(target)
                 }else{
-                    target = towers[j].pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_WALL && s.hits < s.maxHits});
+                    target = towers[j].pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_WALL && s.hits < s.maxHits})
                     if(target !== null){
-                        towers[j].heal(target);
+                        towers[j].heal(target)
                     }
                 }
             }
@@ -67,13 +60,75 @@ module.exports = {
         }
     },
 
+    runMiningCrew(room) {
+        if (room.controller.level < 6) {
+            return
+        }
+
+        let mineral = this.getMineral(room)
+        let extractor = this.getExtractor(room)
+        let container = this.getMineralContainer(room, mineral)
+
+        if(extractor != null && container != null && mineral.mineralAmount > 0){
+            let miner = util.getCreepsByRole(room,'miner').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
+            let transporter = util.getCreepsByRole(room,'transporter').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
+            if(!miner.length && !transporter.length){
+                console.log('Extractable Minerals ['+mineral.mineralType+'] Detected in '+room.name+' Deploying Mining Crew')
+                this.queMiningCrew(room)
+            }else{
+                console.log('Mineral Extraction In Progress in '+room.name)
+            }
+        }
+        if(mineral.mineralAmount === 0 && extractor != null && container != null){
+            console.log('Mineral Extraction Paused in '+room.name+'. Mineral Regeneration in '+mineral.ticksToRegeneration+' ticks')
+        }
+    },
+
+    getSources(room){
+        return room.find(FIND_SOURCES)
+    },
+
+    getMineral(room){
+        return room.find(FIND_MINERALS).shift()
+    },
+
+    getMineralContainer(room,mineral){
+        return room.find(FIND_STRUCTURES,{filter: (s) => { return s.pos.inRangeTo(mineral,1) }}).shift()
+    },
+
+    getExtractor(room){
+        return room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_EXTRACTOR}}).shift()
+    },
+
+    queMiningCrew(room){
+        let mineral = this.getMineral(room)
+        let container = this.getMineralContainer(room,mineral)
+        if(mineral == null || container == null){
+            return false;
+        }
+
+        this.queCreep(room,'miner',1,{respawn:false,level:4,target:container.id,targetResource:mineral.mineralType})
+        this.queCreep(room,'transporter',1,{respawn:false,level:2,targetResource:mineral.mineralType})
+        return true
+    },
+
+    queEnergyMiners(room){
+        let sources = this.getSources(room)
+        this.queCreep(room,'miner',sources.length,{respawn:true,level:2})
+    },
+
+    queEnergyTransporters(room){
+        let sources = this.getSources(room)
+        this.queCreep(room,'transporter',sources.length,{respawn:true,level:2})
+    },
+
     buildBase(room){
         if(room.controller.owner !== undefined && room.controller.owner.username !== 'Deep160'){ return }
 
         if(room.controller.level === 1 && !room.memory.level['1'].complete){
             //spawn harvesters
             if(!room.memory.level['1'].spawnHarvesters) {
-                this.queCreep(room, 'harvester', room.find(FIND_SOURCES).length, {respawn: true})
+                this.queCreep(room, 'harvester', this.getSources(room).length, {respawn: true})
                 room.memory.level['1'].spawnHarvesters = true
             }
             if(room.memory.level['1'].spawnHarvesters){
@@ -98,13 +153,13 @@ module.exports = {
         }
 
         if(room.controller.level === 3 && !room.memory.level['3'].complete){
-            //build extensions, place\build source containers, switch harvesters to c-miners, spawn maintenance
+            //build extensions, place\build source containers, switch harvesters to miners, spawn maintenance
             if(!room.memory.level['3'].extensions){
                 room.memory.level['3'].extensions = this.availableExtensions(room) === 0
             }
 
             if(!room.memory.level['3'].containers && room.memory.level['3'].extensions){
-                let sources = room.find(FIND_SOURCES);
+                let sources = this.getSources(room);
                 for(let i = 0; i < sources.length; i++){
                     let spots = util.openSpacesNearPos(sources[i].pos,1,true);
                     room.createConstructionSite(spots[0].x,spots[0].y,STRUCTURE_CONTAINER);
@@ -112,7 +167,7 @@ module.exports = {
                 room.memory.level['3'].containers = true;
             }
 
-            if(!room.memory.level['3'].containersBuilt && room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER }}).length >= room.find(FIND_SOURCES).length){
+            if(!room.memory.level['3'].containersBuilt && room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER }}).length >= this.getSources(room).length){
                 room.memory.level['3'].containersBuilt = true;
             }
 
@@ -123,8 +178,8 @@ module.exports = {
 
             if(!room.memory.level['3'].upgradeCreeps1 && room.memory.level['3'].containersBuilt){
                 util.setCreepPropsByRole(room,'harvester','respawn',false)
-                this.queCreep(room,'c-miner',room.find(FIND_SOURCES).length,{respawn:true,level:2})
-                console.log('Upgraded Harvesters to C-Miners')
+                this.queCreep(room,'miner',this.getSources(room).length,{respawn:true,level:2})
+                console.log('Upgraded Harvesters to Miners')
                 room.memory.level['3'].upgradeCreeps1 = true
             }
 
@@ -134,13 +189,13 @@ module.exports = {
         }
 
         if(room.controller.level === 4 && !room.memory.level['4'].complete){
-            //switch harvesters to c-miners, add e-maint, upgrade creeps,
+            //switch harvesters to miners, add e-maint, upgrade creeps,
             if(!room.memory.level['4'].extensions){
                 room.memory.level['4'].extensions = this.availableExtensions(room) === 0
             }
 
             if(!room.memory.level['4'].upgradeCreeps && room.memory.level['4'].extensions){
-                util.setCreepPropsByRole(room,'c-miner','level',3)
+                util.setCreepPropsByRole(room,'miner','level',3)
                 util.setCreepPropsByRole(room,'r-harvester','level',3)
                 util.setCreepPropsByRole(room,'builder','level',3)
                 room.memory.level['4'].upgradeCreeps = true
@@ -213,10 +268,10 @@ module.exports = {
         return false;
     },
 
-    queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetEnergy:null}){
+    queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetCollect:null,targetResource:null}){
         let succ = false
         for(let i = 0; i < count; i++){
-            let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'targetRoom':options.targetRoom}
+            let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'targetRoom':options.targetRoom,'targetCollect':options.targetCollect,'targetResource':options.targetResource}
             succ = this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)})
         }
         return succ
@@ -230,47 +285,34 @@ module.exports = {
     initRole(room,memory){
         let res = {};
         switch(memory.role){
-            //case 'harvester': res = this.initHarvester(room,memory); break;
-            case 'c-miner': res = this.initCMiner(room,memory); break;
+            case 'miner': res = this.initMiner(room,memory); break;
             default: res = memory; break;
         }
         return res;
     },
 
-    // initHarvester(room,memory){
-    //     if(memory.target != null){ return memory; }
-    //
-    //     let sourceIds  = room.find(FIND_SOURCES).map((s) => { return s.id; });
-    //     let takenTargets = util.getCreepPropsByRole(room, 'harvester','target');
-    //
-    //     let available = [];
-    //     for(var i = 0; i < sourceIds.length; i++){
-    //         if(takenTargets.includes(sourceIds[i])){ continue; }
-    //         available.push(sourceIds[i]);
-    //     }
-    //
-    //     memory.target = (available.length ? available[0] : sourceIds[0] ) ;
-    //     return memory;
-    // },
+    initMiner(room,memory){
+        if(memory.target != null && Game.getObjectById(memory.target) != null){
+            return memory
+        }
 
-    initCMiner(room,memory){
-        let rmContainers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTAINER});
-        let taken = util.getCreepPropsByRole(room, 'c-miner','target');
-        let available = [];
+        let rmContainers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTAINER})
+        let taken = util.getCreepPropsByRole(room, 'miner','target')
+        let available = []
         for(let i = 0; i < rmContainers.length; i++){
-            if(taken.includes(rmContainers[i].id)){ continue; }
+            if(taken.includes(rmContainers[i].id)){ continue }
 
-            let nearby = rmContainers[i].pos.findInRange(FIND_SOURCES,1);
+            let nearby = rmContainers[i].pos.findInRange(FIND_SOURCES,1)
             if(nearby.length){
-                available.push(rmContainers[i].id);
+                available.push(rmContainers[i].id)
             }
         }
 
         if(available.length){
-            memory.target = available[0];
+            memory.target = available[0]
         }
 
-      return memory;
+      return memory
     },
 
     availableExtensions(room){
