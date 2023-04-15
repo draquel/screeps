@@ -3,6 +3,7 @@ const rooms = require('./rooms');
 const creeps = require('./creeps');
 
 module.exports.loop = function () {
+
     //Cleanup Memory
     util.cleanupMemory();
 

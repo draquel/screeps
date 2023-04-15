@@ -2,6 +2,14 @@ const util = require("./util");
 
 module.exports = {
 
+
+    getRoomByName(name = null){
+        if(Object.keys(Game.rooms).includes(name)){
+            return Game.rooms[name]
+        }
+        return null
+    },
+
     initMem(room){
         if(!room.memory.showPath){
             console.log('Initializing Room Memory: ' + room.name )
@@ -18,7 +26,7 @@ module.exports = {
     run(room){
         this.initMem(room)
 
-        if(Game.time%40 === 0){
+        if(Game.time%100 === 0){
             this.runMiningCrew(room)
         }
         this.processSpawnQueue(room)
@@ -85,18 +93,22 @@ module.exports = {
     },
 
     getSources(room){
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
         return room.find(FIND_SOURCES)
     },
 
     getMineral(room){
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
         return room.find(FIND_MINERALS).shift()
     },
 
     getMineralContainer(room,mineral){
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
         return room.find(FIND_STRUCTURES,{filter: (s) => { return s.pos.inRangeTo(mineral,1) }}).shift()
     },
 
     getExtractor(room){
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
         return room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_EXTRACTOR}}).shift()
     },
 
@@ -112,14 +124,24 @@ module.exports = {
         return true
     },
 
-    queEnergyMiners(room){
+    queEnergyCrew(room, level = 2){
         let sources = this.getSources(room)
-        this.queCreep(room,'miner',sources.length,{respawn:true,level:2})
+        this.queCreep(room,'miner',sources.length,{respawn:true,level:level})
+        this.queCreep(room,'transporter',sources.length,{respawn:true,level:level})
     },
 
-    queEnergyTransporters(room){
+    queEnergyMiners(room, level = 2){
         let sources = this.getSources(room)
-        this.queCreep(room,'transporter',sources.length,{respawn:true,level:2})
+        this.queCreep(room,'miner',sources.length,{respawn:true,level:level})
+    },
+
+    queEnergyTransporters(room, level = 2){
+        let sources = this.getSources(room)
+        this.queCreep(room,'transporter',sources.length,{respawn:true,level:level})
+    },
+
+    queBuilders(room,level = 1,count = 1){
+        this.queCreep(room,'builder',count,{respawn:true,level:level})
     },
 
     buildBase(room){
@@ -270,6 +292,7 @@ module.exports = {
 
     queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetCollect:null,targetResource:null}){
         let succ = false
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
         for(let i = 0; i < count; i++){
             let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'targetRoom':options.targetRoom,'targetCollect':options.targetCollect,'targetResource':options.targetResource}
             succ = this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)})

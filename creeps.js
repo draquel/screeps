@@ -28,12 +28,12 @@ module.exports =  {
         switch(creep.memory.role){
             case 'scout': this.runScout(creep); break;
             case 'harvester': this.runHarvester(creep); break;
-            case 'r-harvester': this.runRHarvester(creep); break;
             case 'builder': this.runBuilder(creep); break;
             case 'maintenance': this.runMaintenance(creep); break;
             case 'd-maintenance': this.runDMaintenance(creep); break;
             case 'transporter': this.runTransporter(creep); break;
-            case 'miner': this.runCMiner(creep); break;
+            case 'miner': this.runMiner(creep); break;
+
             case 'healer': this.runHealer(creep); break;
             case 'attack': this.runAttack(creep); break;
             case 'defend': this.runDefend(creep); break;
@@ -60,7 +60,7 @@ module.exports =  {
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
             creep.memory.target = null;
-            creep.memory.targetDeliver = null;
+            creep.memory.targetDeposit = null;
             creep.say('🚚 Deliver');
         }
         if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
@@ -69,43 +69,19 @@ module.exports =  {
             creep.say('🔄 Harvest');
         }
 
-        if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
-            this.moveToRoom(creep)
-            return
-        }
-
         if(creep.memory.working){
-            work.collectResource(creep,{sources:true,drops:true,tombs:true})
-        }else{
-            if(!work.refillBaseEnergy(creep,{storages: false, containers: false, links:false})) {
-                if (!work.refillBaseEnergy(creep, {storages: false, containers: true, links:false})) {
-                    work.workerUpgrade(creep)
-                }
-            }
-        }
-    },
-
-    runRHarvester(creep){
-        if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
-            creep.memory.working = false;
-            creep.memory.target = null;
-            creep.memory.targetDeliver = null;
-            creep.say('🚚 Deliver');
-        }
-        if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
-            creep.memory.working = true;
-            creep.say('🔄 Harvest');
-        }
-
-        if(creep.memory.working){
-            if(this.moveToRoom(creep)){
-                work.collectResource(creep,{sources: true, drops: true, tombs: true})
+            if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
+                this.moveToRoom(creep)
+            }else if(creep.memory.targetRoom == null && !this.inHomeRoom(creep)){
+                this.moveToHome(creep)
+            }else{
+                work.collectResource(creep,{sources:true,drops:true,tombs:true})
             }
         }else{
-            if(this.moveToHome(creep)){
-                if(!work.refillBaseEnergy(creep,{links: true, storages: true, containers: true})){
-                    work.workerUpgrade(creep)
-                }
+            if(!this.inHomeRoom(creep)){
+                this.moveToHome(creep)
+            }else if (!work.refillBaseEnergy(creep, {storages: true, containers: true, links:false})) {
+                work.workerUpgrade(creep)
             }
         }
     },
@@ -147,7 +123,6 @@ module.exports =  {
         }else{
             work.collectResource(creep,{drops: true, tombs: true, sources: true, containers: true, storages: true})
         }
-
     },
 
     runTransporter(creep){
@@ -165,8 +140,8 @@ module.exports =  {
 
 
         if(creep.memory.working){
-            if(!work.refillBaseResources(creep, {terminal:true,links:true,storages:false,containers:false},resource)){
-                work.refillBaseResources(creep, {terminal:false,links:false,storages:true,containers:false},resource)
+            if(!work.depositResources(creep, {terminal:true,links:false,storages:false,containers:false},resource)){
+                work.depositResources(creep, {terminal:false,links:false,storages:true,containers:false},resource)
             }
         }else{
             let targets = creep.room.find(FIND_STRUCTURES, {
@@ -175,7 +150,7 @@ module.exports =  {
                     return (s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(resource) > 0 ||
                         s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(resource) > 0 ||
                         s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(resource) > 0 ||
-                        s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 7500;
+                        s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 10000;
                 }
             });
 
@@ -265,7 +240,7 @@ module.exports =  {
         }
     },
 
-    runCMiner(creep){
+    runMiner(creep){
         let resource = this.getTargetResource(creep)
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;

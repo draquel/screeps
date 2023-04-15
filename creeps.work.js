@@ -218,7 +218,7 @@ module.exports =  {
     */
 
     refillBaseEnergy(creep,options = {storages:false,containers:false,links:false}){
-        return this.refillBaseResources(creep,options)
+        return this.depositResources(creep,options)
     },
 
     getDepositTarget(creep, options = {terminal:false,storages:false,containers:false,links:false}, resource = RESOURCE_ENERGY){
@@ -250,7 +250,7 @@ module.exports =  {
 
         if(options.terminal) {
             target = creep.room.find(FIND_STRUCTURES, {
-                filter: (s) => {return s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 7500; }
+                filter: (s) => {return s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 10000; }
             });
             if(target != null){ targetList = [...targetList,...target] }
         }
@@ -272,7 +272,7 @@ module.exports =  {
         return target
     },
 
-    refillBaseResources(creep,options = {terminal:false,storages:false,containers:false,links:false},resource = RESOURCE_ENERGY){
+    depositResources(creep, options = {terminal:false,storages:false,containers:false,links:false}, resource = RESOURCE_ENERGY){
         if(creep.memory.targetDeposit != null){
             let memoryTarget = Game.getObjectById(creep.memory.targetDeposit)
             if(memoryTarget != null){

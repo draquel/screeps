@@ -5,7 +5,7 @@ module.exports =  {
     combatAttack(creep,target){
         let result = creep.attack(target)
         if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, {visualizePathStyle: {stroke: '#FF0000'}, reusePath: creep.room.memory.reusePath});
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ff0000'},target)
         }else if(result === ERR_INVALID_TARGET){
             creep.memory.target = null;
         }else if(result === ERR_NO_BODYPART){
@@ -22,7 +22,7 @@ module.exports =  {
 
         let result = creep.heal(target)
         if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, {visualizePathStyle: {stroke: '#00FF00'}, reusePath: creep.room.memory.reusePath});
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#00ff00'},target)
         }else if(result === ERR_INVALID_TARGET){
             creep.memory.target = null;
         }else if(result === ERR_NO_BODYPART){
@@ -35,7 +35,7 @@ module.exports =  {
     combatRanged(creep,target){
         let result = creep.ranged_attack(target)
         if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, {visualizePathStyle: {stroke: '#0000FF'}, reusePath: creep.room.memory.reusePath});
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#0000ff'},target)
         }else if(result === ERR_INVALID_TARGET){
             creep.memory.target = null;
         }else if(result === ERR_NO_BODYPART){
@@ -45,12 +45,15 @@ module.exports =  {
         }
     },
 
-    combatClaim(creep,target){
-        let result = creep.claim(target)
-        if (result === ERR_NOT_IN_RANGE) {
-            creep.moveTo(target, {visualizePathStyle: {stroke: '#00FFFF'}, reusePath: creep.room.memory.reusePath});
-        }else if(result === ERR_INVALID_TARGET){
-            creep.memory.target = null;
+    combatClaim(creep){
+        let controller = creep.room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTROLLER})
+        let res = creep.claimController(controller[0])
+        if(res === ERR_NOT_IN_RANGE){
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ffffff'},target)
+        }else if(res === ERR_INVALID_TARGET){
+            if(creep.attackController(controller[0]) === ERR_TIRED){
+                //console.log("wait")
+            }
         }else if(result === ERR_NO_BODYPART){
             console.log("combatClaim: Creep "+creep.name+" does not have CLAIM part")
         }else if(result === ERR_INVALID_ARGS){
@@ -60,19 +63,20 @@ module.exports =  {
 
     getAttackTarget(creep){
         var takenTargets = util.getCreepPropsByRole(creep.room,creep.memory.role,'target');
-        let target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES,{filter: (s) => (takenTargets.length && !takenTargets.includes(s.id)) && s.structureType === STRUCTURE_TOWER})
+        let target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) && c.body.map(i => i.type).includes("ATTACK")});
         if(target == null){
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) && c.body.map(i => i.type).includes("ATTACK")});
+            target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES,{filter: (s) => (takenTargets.length && !takenTargets.includes(s.id)) && s.structureType === STRUCTURE_TOWER})
         }
-        if (target == null) {
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) });
-        }
-        if (target == null) {
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType !== STRUCTURE_CONTROLLER})
-        }
-        if (target == null) {
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType === STRUCTURE_CONTROLLER})
-        }
+        // if (target == null) {
+        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) });
+        // }
+        // if (target == null) {
+        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType !== STRUCTURE_CONTROLLER})
+        // }
+        // if (target == null) {
+        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType === STRUCTURE_CONTROLLER})
+        // }
+        //console.log("target: "+target == null ? null : target.id)
         return target
     }
 
