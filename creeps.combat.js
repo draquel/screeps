@@ -13,10 +13,11 @@ module.exports =  {
         }else if(result === ERR_INVALID_ARGS){
             console.log("combatAttack: Invalid Arguments")
         }
+        return result
     },
 
     combatHeal(creep,target){
-        if(targetObj.hits === targetObj.hitsMax){
+        if(target.hits === target.hitsMax){
             return
         }
 
@@ -30,6 +31,7 @@ module.exports =  {
         }else if(result === ERR_INVALID_ARGS){
             console.log("combatHeal: Invalid Arguments")
         }
+        return result
     },
 
     combatRanged(creep,target){
@@ -43,40 +45,72 @@ module.exports =  {
         }else if(result === ERR_INVALID_ARGS){
             console.log("combatRanged: Invalid Arguments")
         }
+        return result
     },
 
     combatClaim(creep){
         let controller = creep.room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTROLLER})
-        let res = creep.claimController(controller[0])
-        if(res === ERR_NOT_IN_RANGE){
-            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ffffff'},target)
-        }else if(res === ERR_INVALID_TARGET){
-            if(creep.attackController(controller[0]) === ERR_TIRED){
-                //console.log("wait")
-            }
+        let result = creep.claimController(controller[0])
+        if(result === ERR_NOT_IN_RANGE){
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ffffff'},controller[0])
+        }else if(result === ERR_INVALID_TARGET){
+            console.log("combatClaim: Attacking Target Controller")
+            this.combatAttackController(creep)
         }else if(result === ERR_NO_BODYPART){
             console.log("combatClaim: Creep "+creep.name+" does not have CLAIM part")
         }else if(result === ERR_INVALID_ARGS){
             console.log("combatClaim: Invalid Arguments")
+        }else if(result === ERR_GCL_NOT_ENOUGH){
+            //console.log("combatClaim: GCL too low -> reserving room")
+            this.combatReserve(creep)
         }
+        return result
+    },
+
+    combatReserve(creep){
+        let controller = creep.room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTROLLER})
+        let result = creep.reserveController(controller[0])
+        if(result === ERR_NOT_IN_RANGE){
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ffffff'},controller[0])
+        }else if(result === ERR_INVALID_TARGET){
+            console.log("combatReserve: Attacking Target Controller")
+            this.combatAttackController(creep)
+        }else if(result === ERR_NO_BODYPART){
+            console.log("combatReserve: Creep "+creep.name+" does not have CLAIM part")
+        }else if(result === ERR_INVALID_ARGS){
+            console.log("combatReserve: Invalid Arguments")
+        }
+        return result
+    },
+
+    combatAttackController(creep){
+        let controller = creep.room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTROLLER})
+        let result = creep.attackController(controller[0])
+        if(result === ERR_NOT_IN_RANGE){
+            util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ffffff'},controller[0])
+        }else if(result === ERR_INVALID_TARGET){
+
+        }else if(result === ERR_NO_BODYPART){
+            console.log("combatAttackController: Creep "+creep.name+" does not have CLAIM part")
+        }else if(result === ERR_INVALID_ARGS){
+            console.log("combatAttackController: Invalid Arguments")
+        }
+        return result
     },
 
     getAttackTarget(creep){
-        var takenTargets = util.getCreepPropsByRole(creep.room,creep.memory.role,'target');
-        let target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) && c.body.map(i => i.type).includes("ATTACK")});
-        if(target == null){
-            target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES,{filter: (s) => (takenTargets.length && !takenTargets.includes(s.id)) && s.structureType === STRUCTURE_TOWER})
+        let takenTargets = util.getCreepPropsByRole(creep.room,creep.memory.role,'target')
+        takenTargets = takenTargets == null ? [] : takenTargets
+
+        let targets = creep.room.find(FIND_CREEPS, {filter: (c) => !c.my && c.body.map(i => i.type).includes("ATTACK") })
+        if(targets.length === 0){
+            targets = creep.room.find(FIND_CREEPS, {filter: (c) => !c.my && !takenTargets.includes(c.id) })
         }
-        // if (target == null) {
-        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_CREEPS, {filter: (c) => (takenTargets.length && !takenTargets.includes(c.id)) });
-        // }
-        // if (target == null) {
-        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType !== STRUCTURE_CONTROLLER})
-        // }
-        // if (target == null) {
-        //     target = creep.pos.findClosestByPath(FIND_HOSTILE_STRUCTURES, {filter: (s) => s.structureType === STRUCTURE_CONTROLLER})
-        // }
-        //console.log("target: "+target == null ? null : target.id)
+        if(targets.length === 0){
+            targets = creep.room.find(FIND_STRUCTURES,{filter: (s) => !s.my && s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_CONTROLLER && (s.hitsMax > 1000 || !takenTargets.includes(s.id))})
+        }
+
+        let target = creep.pos.findClosestByPath(targets,{algorithm: "astar"})
         return target
     }
 

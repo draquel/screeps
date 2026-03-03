@@ -5,20 +5,10 @@ const util = require("./util");
 
 module.exports =  {
 
-
     run(creep){
         //runOrder
         this.runRole(creep);
     },
-
-    // runOrders(creep){
-    //     if(creep.memory.orders.length === 0){
-    //         return false;
-    //     }
-    //
-    //     let order = creep.memory.orders.shift();
-    //
-    // },
 
     /*
     *   ROLES
@@ -59,13 +49,12 @@ module.exports =  {
     runHarvester(creep){
         if(creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = false;
-            creep.memory.target = null;
-            creep.memory.targetDeposit = null;
+            creep.memory.targetCollect = null;
             creep.say('🚚 Deliver');
         }
         if(!creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
             creep.memory.working = true;
-            creep.memory.targetCollect = null;
+            creep.memory.targetDeposit = null;
             creep.say('🔄 Harvest');
         }
 
@@ -89,8 +78,8 @@ module.exports =  {
     runMaintenance(creep){
         if(creep.memory.working && creep.store[RESOURCE_ENERGY] === 0) {
             creep.memory.working = false;
-            creep.memory.target = null;
-            creep.memory.targetDeliver = null;
+            //creep.memory.target = null;
+            creep.memory.targetDeposit = null;
             creep.say('⚡ Recharge');
         }
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
@@ -138,10 +127,9 @@ module.exports =  {
             creep.say('🚚 Deliver');
         }
 
-
         if(creep.memory.working){
-            if(!work.depositResources(creep, {terminal:true,links:false,storages:false,containers:false},resource)){
-                work.depositResources(creep, {terminal:false,links:false,storages:true,containers:false},resource)
+            if(!work.depositResources(creep, {factory:true,terminal:true,links:false,storages:false,containers:false},resource)){
+                work.depositResources(creep, {terminal:false,links:false,labs:false,storages:true,containers:false},resource)
             }
         }else{
             let targets = creep.room.find(FIND_STRUCTURES, {
@@ -149,19 +137,21 @@ module.exports =  {
                 filter: (s) => {
                     return (s.structureType === STRUCTURE_SPAWN && s.store.getFreeCapacity(resource) > 0 ||
                         s.structureType === STRUCTURE_EXTENSION && s.store.getFreeCapacity(resource) > 0 ||
-                        s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(resource) > 0 ||
-                        s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 10000;
+                        s.structureType === STRUCTURE_TOWER) && s.store.getFreeCapacity(resource) > s.store.getCapacity(resource) * 0.25 ||
+                        s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 && s.store.getUsedCapacity(resource) < 10000 ||
+                        resource === RESOURCE_ENERGY && s.structureType === STRUCTURE_LAB && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0;
                 }
             });
+            let controllerUnder5 = creep.room.controller != null && creep.room.controller.level < 5
 
             work.collectResource(
                 creep,
                 {
-                    drops: true,
-                    tombs: true,
-                    links: false,
+                    drops: controllerUnder5,
+                    tombs: controllerUnder5,
+                    links: true,
                     sources: false,
-                    containers: true,
+                    containers: controllerUnder5 || resource !== RESOURCE_ENERGY,
                     storages: targets.length > 0
                 },
                 resource
@@ -178,7 +168,7 @@ module.exports =  {
         if(!creep.memory.working && creep.store.getFreeCapacity() === 0) {
             creep.memory.working = true;
             creep.memory.targetCollect = null;
-            creep.say('🔧 repair');
+            creep.say('🔧 Repair');
         }
 
         if(creep.memory.working){
@@ -230,11 +220,11 @@ module.exports =  {
             work.collectResource(
                 creep,{
                     containers:true,
-                    storages:true,
+                    storages:creep.room.controller.level > 4,
                     links:true,
                     tombs:false,
-                    drops:false,
-                    sources:(!containers.length)
+                    drops:true,
+                    sources:!containers.length
                 }
             );
         }
@@ -251,76 +241,43 @@ module.exports =  {
             //creep.say('🔦 Mining');
         }
 
+        let target
         if(!creep.memory.target){
-            let targetObj = creep.pos.findClosestByPath(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER && s.store.getFreeCapacity(resource) > 0 },algorithm: "astar"});
-            creep.memory.target = targetObj.id;
+            let taken = util.getCreepProp(creep.room.find(FIND_MY_CREEPS),'target');
+            if(resource === RESOURCE_ENERGY){
+                target = creep.pos.findClosestByPath(creep.room.sources,{filter:(s) => { return !taken.includes(s.id) },algorithm: "astar"});
+            }else{
+                target = creep.pos.findClosestByPath(FIND_MINERALS,{filter:(s) => { return !taken.includes(s.id) },algorithm: "astar"});
+            }
+            creep.memory.target = target != null ? target.id : null;
         }else{
-            targetObj = Game.getObjectById(creep.memory.target);
+            target = Game.getObjectById(creep.memory.target);
         }
 
-        if(creep.memory.working && targetObj != null){
-            if(!creep.pos.isEqualTo(targetObj.pos)) {
-                util.moveToTarget(creep,{showPath: true,pathColor: '#ffffff'},targetObj)
-
-            }else{
-                let target
-
-                if(resource === RESOURCE_ENERGY){
-                    //console.log('miner ['+creep.name+']: set energy target')
-                    target = creep.pos.findClosestByRange(FIND_SOURCES,{algorithm: "astar"});
-                }else{
-                    //console.log('miner ['+creep.name+']: set mineral target')
-                    target = creep.pos.findClosestByRange(FIND_MINERALS,{algorithm: "astar",filter: (r) => { return r.mineralType === resource}});
-                }
-
-                if(target && creep.pos.inRangeTo(target,1)) {
-                    if (creep.harvest(target) === ERR_NOT_IN_RANGE) {
-                        console.log('Miner ' + creep.name + ': Target Out of Range!!!')
-                    }
-                }
-            }
+        if(creep.memory.working && target != null){
+            work.workerHarvest(creep,target)
         }else{
-            let res = creep.transfer(targetObj, resource)
-            if(res === ERR_NOT_IN_RANGE) {
-                creep.moveTo(targetObj, {visualizePathStyle: {stroke: '#ffffff'},reusePath:4});
-                console.log('Miner '+ creep.name+': Container Out of Range!!!')
-            }
-            if(res === ERR_FULL){
-                let link = creep.pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK }});
-                if(link && creep.pos.inRangeTo(link.pos,1)){
-                    creep.transfer(link, resource)
+            let link = creep.pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK && s.store.getFreeCapacity(resource) > 0}});
+            if(link != null && creep.pos.inRangeTo(link.pos.x,link.pos.y,2)){
+                res = work.workerTransfer(creep,link)
+            }else{
+                let container = creep.pos.findClosestByRange(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER }});
+                if(container && creep.pos.inRangeTo(container.pos.x,container.pos.y,2) && creep.store.getUsedCapacity(resource) > 0){
+                    work.workerTransfer(creep,container,resource)
                 }
-            }
-            let resources = creep.room.find(FIND_DROPPED_RESOURCES,{filter:(r) => r.pos.isNearTo(creep) })
-            if(resources.length > 0){
-                creep.pickup(resources[0])
             }
         }
     },
 
     runClaimer(creep){
-        // if(creep.memory.fighting && creep.memory.target === null) {
-        //     creep.memory.fighting = false;
-        //     creep.say('🚚 Defend');
-        // }
-        // if(!creep.memory.fighting && creep.memory.target !== null) {
-        //     creep.memory.fighting = true;
-        //     creep.say('🔦 Attack');
-        // }
-
-        if(this.moveToRoom(creep)) {
-            let controller = creep.room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_CONTROLLER})
-            let res = creep.claimController(controller[0])
-            if(res === ERR_NOT_IN_RANGE){
-                creep.moveTo(controller[0], {visualizePathStyle: {stroke: '#ffffff'},reusePath:4});
-            }
-            if(res === ERR_INVALID_TARGET){
-                if(creep.attackController(controller[0]) === ERR_TIRED){
-                    //console.log("wait")
-                }
-            }
-
+        if(creep.memory.targetRoom != null && !this.inTargetRoom(creep)){
+            this.moveToRoom(creep)
+            return
         }
+
+        if(creep.memory.fighting){
+            combat.combatClaim(creep)
+        }else{}
     },
 
     runHealer(creep){
@@ -400,7 +357,6 @@ module.exports =  {
                 let target = combat.getAttackTarget(creep)
                 if(target != null){
                     creep.memory.target = target.id
-                    creep.memory.targetRoom = target.room.id
                 }else{
                     //fallback behavior
                 }
@@ -430,7 +386,7 @@ module.exports =  {
             creep.memory.currentRoom = creep.room.name
         }
         if(!this.inTargetRoom(creep,room)) {
-            util.moveToTarget(creep,{showPath: true, pathColor: "#0c02d1"},creep.pos.findClosestByPath(creep.room.findExitTo(room)))
+            util.moveToTarget(creep,{showPath:creep.room.memory.showPath, pathColor: "#0c02d1", reusePath:10},creep.pos.findClosestByPath(creep.room.findExitTo(room),{algorithm:'astar'}))
             //console.log('moveToRoom: Moving To Room '+creep.memory.targetRoom)
             return false;
         }else{

@@ -1,23 +1,40 @@
+// noinspection JSUnresolvedReference
+
 var util = {
 
     cleanupMemory: function(){
         if(!Memory.creeps && !Memory.rooms){ return; }
 
-        if(Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
+        //Rooms
+        if(Memory.rooms && Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
+            let sourceIds = []
             for(let name in Memory.rooms) {
                 if (!Game.rooms[name]) {
                     console.log('Clearing Room Memory: ', name);
                     delete Memory.rooms[name];
+                }else{
+                    Game.rooms[name].sources.forEach((s) => { sourceIds.push(s.id) })
+                }
+            }
+            //Sources
+            for(let id in Memory.sources){
+                if(!sourceIds.includes(id)){
+                    console.log('   Source Memory: ', id);
+                    delete Memory.sources[id]
                 }
             }
         }
 
-        if(Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
+        //Creeps
+        if(Memory.creeps && Object.keys(Memory.creeps).length > Object.keys(Game.creeps).length){
             for(let name in Memory.creeps) {
                 if(!Game.creeps[name]) {
                     if(Memory.creeps[name].respawn && Object.keys(Memory.rooms).includes(Memory.creeps[name].room)){
                         let room = Game.rooms[Memory.creeps[name].room];
                         let memory = Memory.creeps[name];
+                        if(memory["role"] != "miner"){
+                            memory['target'] = null;
+                        }
                         if(room === undefined){ continue; }
                         console.log('Auto-Respawn: Queuing '+name+' in '+room.name);
                         room.memory.spawnQueue.push({name:name, memory:memory})
@@ -34,7 +51,13 @@ var util = {
     moveToTarget(creep, options = { showPath:creep.room.memory.showPath, pathColor: "#ffffff", reusePath:creep.room.memory.reusePath }, target = creep.memory.target){
         let moveOptions = {reusePath: options.reusePath }
         if(options.showPath) {
-            moveOptions.visualizePathStyle = {stroke: options.pathColor}
+            moveOptions.visualizePathStyle = {
+                fill: 'transparent',
+                stroke: options.pathColor,
+                lineStyle: 'dashed',
+                strokeWidth: .15,
+                opacity: .1
+            }
         }
 
         let result = creep.moveTo(target,moveOptions);
@@ -71,6 +94,11 @@ var util = {
     },
 
     getCreepsByRole: function(room,role){
+        if(typeof room === 'string'){
+            if(Object.keys(Game.rooms).includes(room)){
+                room = Game.rooms[room]
+            }
+        }
         let creeps = room.find(FIND_MY_CREEPS,{filter: (c) => c.memory.role === role});
         let spawning = room.memory.spawning.filter((c) => c.memory.role === role);
         let queued = room.memory.spawnQueue.filter((c) => c.memory.role === role);
@@ -157,6 +185,84 @@ var util = {
         return generated;
     },
 
+    computeBuild(role,level = 1){
+        let partValues = {
+            'TOUGH': 10,
+            'CARRY': 50,
+            'MOVE': 50,
+            'WORK': 100,
+            'ATTACK': 80,
+            'RANGED_ATTACK': 150,
+            'HEAL': 250,
+            'CLAIM': 600
+        }
+        let build = {
+            // 'TOUGH': 0,
+            // 'CARRY': 0,
+            // 'MOVE': 0,
+            // 'ATTACK': 0,
+            // 'WORK': 0,
+            // 'RANGED_ATTACK': 0,
+            // 'HEAL': 0,
+            // 'CLAIM': 0
+        }
+        switch(role){
+            case "scout":
+                build.MOVE = 1
+                break;
+            case "harvester":
+                build.WORK = 0.35
+                build.CARRY = 0.35
+                build.MOVE = 0.35
+                break;
+            case "builder":
+                build.WORK = 1
+                build.CARRY = 1
+                build.MOVE = 1
+                break;
+            case "miner":
+                build.WORK = 0.5
+                build.CARRY = 0.25
+                build.MOVE = 0.25
+                break;
+            case "maintenance":
+                build.WORK = 0.3
+                build.CARRY = 0.3
+                build.MOVE = 0.4
+                break;
+            case "transporter":
+                build.CARRY = 0.6
+                build.MOVE = 0.4
+              break;
+            case "claimer":
+                build.CLAIM =  0.75
+                build.MOVE = 0.25
+              break;
+        }
+        console.log(Object.keys(build))
+        let energy = level * 300
+        let result = []
+        // for(let key of Object.keys(build)){
+        //     let partLimit = energy * build[key] / partValues[key]
+        //     console.log(key + " - " + energy * build[key] +" - "+ partLimit)
+        //     let partCount = 1
+        //     while(partCount < partLimit){
+        //         result.push(key)
+        //         partCount++
+        //     }
+        // }
+
+        for(let key of Object.keys(build)){
+            let partCount = Math.round(build[key] * level)
+            while(partCount > 0){
+                result.push(key)
+                partCount--
+            }
+        }
+        console.log("Energy: " + this.calcCreepBuildEnergy(result))
+        return result
+    },
+
     // #TODO Externalize build config to json
     getRoleBuild(role,level = 1){
         //console.log('role:'+role+' - '+'level:'+level);
@@ -166,21 +272,22 @@ var util = {
                 2:[WORK,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE]
             },
             "harvester":{
-                1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE],
-                3:[WORK,WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE],
-                4:[WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                5:[WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                6:[WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
+                1:[WORK,CARRY,CARRY,MOVE,MOVE], //300
+                2:[WORK,WORK,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE], //600
+                3:[WORK,WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //900
+                4:[WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //1200
+                5:[WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],//1500
+                6:[WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //1800
+                7:[WORK,WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE] //2100
             },
             "builder":{
-                1:[WORK,CARRY,CARRY,MOVE,MOVE],
-                2:[WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE],
-                3:[WORK,WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE],
-                4:[WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                5:[WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                6:[WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                7:[WORK,WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE]
+                1:[WORK,CARRY,CARRY,MOVE,MOVE], //300
+                2:[WORK,WORK,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE], //600
+                3:[WORK,WORK,WORK,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //900
+                4:[WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //1200
+                5:[WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],//1500
+                6:[WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //1800
+                7:[WORK,WORK,WORK,WORK,WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE] //2100
             },
             "maintenance":{
                 1:[WORK,CARRY,CARRY,MOVE,MOVE],
@@ -195,12 +302,11 @@ var util = {
                 4:[WORK,WORK,WORK,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE]
             },
             "transporter":{
-                1:[CARRY,CARRY,CARRY,MOVE,MOVE,MOVE],
-                2:[CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                3:[CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                4:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                5:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE],
-                6:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE]
+                1:[CARRY,CARRY,CARRY,MOVE,MOVE,MOVE], //300
+                2:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //600
+                3:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], //900
+                4:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE], // 1200
+                5:[CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,CARRY,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE] //1500
             },
             "miner":{
                 1:[WORK,WORK,CARRY,MOVE],
@@ -224,11 +330,11 @@ var util = {
                 5:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,HEAL,HEAL],
             },
             "attack": {
-                1:[TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,ATTACK,ATTACK],
-                2:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK],
-                3:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK,ATTACK],
-                4:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK,ATTACK,ATTACK],
-                5:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK,ATTACK,ATTACK,ATTACK]
+                1:[TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,ATTACK], //300
+                2:[TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK], //500
+                3:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK], //750
+                4:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK,ATTACK],// 920
+                5:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,MOVE,ATTACK,ATTACK,ATTACK,ATTACK,ATTACK]
             },
             "ranged": {
                 1:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,RANGED_ATTACK],
@@ -237,8 +343,9 @@ var util = {
                 4:[TOUGH,TOUGH,TOUGH,TOUGH,TOUGH,MOVE,MOVE,MOVE,MOVE,MOVE,RANGED_ATTACK,RANGED_ATTACK,RANGED_ATTACK,RANGED_ATTACK],
             },
             "claimer": {
-                1:[CLAIM,MOVE,MOVE,MOVE,MOVE],
-                2:[CLAIM,CLAIM,MOVE,MOVE,MOVE,MOVE]
+                1:[CLAIM,MOVE,MOVE,MOVE,MOVE], // 800
+                2:[CLAIM,CLAIM,MOVE,MOVE,MOVE,MOVE], //1400
+                3:[CLAIM,CLAIM,CLAIM,MOVE,MOVE,MOVE,MOVE],
             }
         }
         return buildLib[role.toLowerCase()][level];
@@ -253,6 +360,10 @@ var util = {
             }
         }
         return count;
+    },
+
+    getCountMap(array){
+        return array.reduce((acc, e) => acc.set(e, (acc.get(e) || 0) + 1), new Map())
     }
 }
 
