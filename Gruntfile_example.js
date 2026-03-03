@@ -5,11 +5,9 @@ module.exports = function(grunt) {
     grunt.initConfig({
         screeps: {
             options: {
-                email: 'draquel@webjynx.com',
-                token: 'c56d1a15-4e51-4e18-bf9b-287de2d2c062',
+                email: 'EMAIL',
+                token: 'TOKEN',
                 branch: 'default',
-                //branch: 'dev',
-                //server: 'season'
             },
             dist: {
                 files: [
