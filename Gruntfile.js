@@ -6,13 +6,16 @@ module.exports = function(grunt) {
         screeps: {
             options: {
                 email: 'draquel@webjynx.com',
-                token: '64d10b80-7b20-4a11-83b5-fbc8dfb78b1d',
+                token: 'TOKEN',
                 branch: 'default',
+                //branch: 'dev',
                 //server: 'season'
             },
             dist: {
-                src: ['./*.js']
-            }
+                files: [
+                    {src: ['./*.js']}
+                ]
+            },
         }
     });
 }
