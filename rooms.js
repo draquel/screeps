@@ -1,8 +1,8 @@
+/* eslint-disable no-undef */
 const util = require("./util");
 const market = require("./market");
 
 module.exports = {
-
     getRoomByName(name = null){
         if(Object.keys(Game.rooms).includes(name)){
             return Game.rooms[name]
@@ -11,7 +11,7 @@ module.exports = {
     },
 
     initMem(room){
-        if(typeof room.memory.showPath === undefined){
+        if(typeof room.memory.showPath === "undefined"){
             console.log('Initializing Room Memory: ' + room.name )
         }
         room.memory = {
@@ -81,6 +81,14 @@ module.exports = {
         let extractor = this.getExtractor(room)
         let container = this.getMineralContainer(room, mineral)
 
+        //Mineral / Container / extractor check
+        if(container == null || extractor == null || mineral == null){
+          if(container == null) console.log("Mineral Container not found!!!")
+          if(extractor == null) console.log("Mineral Extractor not found!!!")
+          if(mineral == null) console.log("Mineral not found!!!")
+          return
+        }
+
         //Miner check
         if(extractor != null && container != null && mineral.mineralAmount > 0){
             let miner = util.getCreepsByRole(room,'miner').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
@@ -92,13 +100,16 @@ module.exports = {
             }
         }
         //Transporter check
-        if(container != null && container.store.getUsedCapacity(mineral.mineralType) >= 1500){
+        if(container != null && container.store.getUsedCapacity(mineral.mineralType) >= 1000){
             let transporter = util.getCreepsByRole(room,'transporter').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
             if(!transporter.length){
+                console.log("Transportable Minerals ["+mineral.mineralType+"] Detected in "+room.name+" Deploying Transporter")
                 this.queCreep(room,'transporter',1,{respawn:false,level:2,targetResource:mineral.mineralType})
             }else{
-
+              console.log("Mineral Transport In Progress in "+room.name)
             }
+        }else{
+          console.log("Mineral Container Store == Null")
         }
         //Paused check
         if(mineral.mineralAmount === 0 && extractor != null && container != null){
@@ -158,7 +169,7 @@ module.exports = {
 
     getMineralContainer(room,mineral){
         room = this.checkRoomObj(room)
-        return room.find(FIND_STRUCTURES,{filter: (s) => { return s.pos.inRangeTo(mineral,1) }}).shift()
+        return room.find(FIND_STRUCTURES,{filter: (s) => { return s.structureType === STRUCTURE_CONTAINER && s.pos.inRangeTo(mineral,2) }}).shift()
     },
 
     getExtractor(room){
@@ -360,23 +371,34 @@ module.exports = {
         return false;
     },
 
-    queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetCollect:null,targetResource:null}){
+    queCreep(room,role,count = 1,options = {level:1,respawn:true,target:null,targetRoom:null,targetCollect:null,targetResource:null},expidite = false){
         let succ = false
         room = this.checkRoomObj(room)
         for(let i = 0; i < count; i++){
             let memory = {'role':role,'level':options.level,'respawn':options.respawn,'target':options.target,'targetRoom':options.targetRoom,'targetCollect':options.targetCollect,'targetResource':options.targetResource}
-            succ = this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)})
+            succ = expidite ?
+                this.unshiftSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)}) :
+                this.pushSpawnQueue(room,{'name':util.nameGenerator(),'memory':this.initRole(room,memory)})
         }
         return succ
     },
 
     pushSpawnQueue(room,build,log=true){
-        if(log){ console.log('Added '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue'); }
+        if(log){ console.log('Pushed '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue'); }
         return room.memory.spawnQueue.push(build) > 0;
     },
 
+    unshiftSpawnQueue(room,build,log=true){
+        if(log){ console.log('Unshifted '+ build.memory.role + (build.name ? ' ' + build.name : '') + ', to the ' + room.name + ' spawn queue'); }
+        return room.memory.spawnQueue.unshift(build) > 0;
+    },
+
+    unstuckSpawnQueue(room){
+      this.queCreep(room,"maintenance",1,{respawn:false},true)
+    },
+
     initRole(room,memory){
-        let res = {};
+        let res;
         switch(memory.role){
             case 'miner': res = this.initMiner(room,memory); break;
             default: res = memory; break;
@@ -416,6 +438,7 @@ module.exports = {
 
     clearQue(room){
         console.log('Clearing Spawn Queue')
+        room = this.checkRoomObj(room)
         room.memory.spawnQueue = []
     },
 

@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 
 module.exports = {
 
@@ -41,7 +42,7 @@ module.exports = {
         });
 
         Object.defineProperty(Room.prototype, 'deposit', {
-            get: function () {},
+          //get: function () {},
             set: function (newValue) {
                 this.memory.sources = newValue.id;
                 this._sources = newValue;

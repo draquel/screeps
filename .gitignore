@@ -1,4 +1,7 @@
 .idea
 node_modules
 package-lock.json
-Gruntfile.js
+screeps.json
+CLAUDE.md
+.claude
+eslint.config.mjs

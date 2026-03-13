@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 const util = require('./util');
 const rooms = require('./rooms');
 
@@ -28,5 +29,6 @@ module.exports = {
 
     // Spawn queue
     spawn(room, role, count, opts) { rooms.queCreep(room, role, count, opts) },
-    clearQueue(room) { rooms.clearQue(room) }
+    clearQueue(room) { rooms.clearQue(room) },
+    unstuckQueue(room) { rooms.unstuckSpawnQueue(room) }
 }
