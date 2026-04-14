@@ -19,6 +19,9 @@ module.exports = {
     setRoleProp(room, role, prop, value) {
         util.setCreepPropsByRole(room, role, prop, value)
     },
+    getRoleProp(room, role, prop){
+      util.getCreepPropsByRole(room, role, prop, true)
+    },
 
     // Queries
     creeps(room, role) { return util.getCreepsByRole(room, role) },
@@ -28,7 +31,8 @@ module.exports = {
     },
 
     // Spawn queue
-    spawn(room, role, count, opts) { rooms.queCreep(room, role, count, opts) },
+    spawn(room, role, count, opts, expidite = false) { rooms.queCreep(room, role, count, opts, expidite) },
     clearQueue(room) { rooms.clearQue(room) },
-    unstuckQueue(room) { rooms.unstuckSpawnQueue(room) }
+    unstuckQueue(room) { rooms.unstuckSpawnQueue(room) },
+    sellResources(room, amount = 10000){ rooms.sellResources(room,amount) }
 }

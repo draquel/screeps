@@ -1,3 +1,4 @@
+/* eslint-disable no-undef */
 
 const proto = require('./screeps.prototype')
 const rooms = require('./rooms');
