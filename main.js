@@ -8,7 +8,8 @@ module.exports.loop = function () {
     Game.util = require('./util');
     Game.cmd = require('./cmd');
 
-    //Apply prototypes
+
+  //Apply prototypes
     proto.load();
 
     //Cleanup Memory

@@ -107,6 +107,30 @@ module.exports = {
          console.log("Failed to execute: "+result)
        }
       }
+
+
+      if(room.controller.level >= 8){
+        //check for other rooms needing room resource:
+        // TODO 
+        //    runs too ofter
+        //    needs handling for visibility constraintst
+
+        let rooms = Object.keys(Game.rooms)
+        for(let i = 0; i < rooms.length; i++){
+          let r = Game.rooms[rooms[i]]
+          if(!r || room.name == r.name || room.mineral == r.mineral){
+            continue;
+          }
+          if(!r.terminal){ /*console.log("["+room.name+"] no terminal reference for "+r.name);*/ continue }
+
+          let deficit = 10000 - r.terminal.store.getUsedCapacity(room.mineral);
+          if(deficit > 0 && room.terminal.store.getUsedCapacity(room.mineral) > deficit){
+            room.terminal.send(room.mineral,deficit,r.name,"Sharing "+room.mineral)
+            console.log("["+room.name+"] Sending "+deficit+" "+room.mineral+" to "+r.name)
+          }
+        }
+
+      }
     },
 
     runFactory(room){

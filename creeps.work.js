@@ -272,7 +272,7 @@ module.exports =  {
         if(options.terminal) {
             target = []
             if(creep.room.terminal !== undefined){
-                if(creep.room.terminal.store.getFreeCapacity(resource) > 0 && creep.room.terminal.store.getUsedCapacity(resource) < 10000){
+                if(creep.room.terminal.store.getFreeCapacity(resource) > 0 && creep.room.terminal.store.getUsedCapacity(resource) < (resource == RESOURCE_ENERGY) ? 10000 : 100000){
                     target.push(creep.room.terminal)
                 }
             }
