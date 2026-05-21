@@ -51,6 +51,8 @@ module.exports = {
         this.runTowers(room)
         this.runLinks(room)
         this.runTerminal(room)
+        this.runLabs(room)
+        this.runFactory(room)
     },
 
     runTowers(room){
@@ -233,8 +235,78 @@ module.exports = {
           }
       }
   },
-    runFactory(room){
+    runLabs(room){
+        if(!room.controller || room.controller.level < 6) return;
+        let labs = room.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_LAB});
+        if(!labs.length) return;
 
+        let in1 = labs.find(l => l.memory.role === 'input1');
+        let in2 = labs.find(l => l.memory.role === 'input2');
+        let outputs = labs.filter(l => l.memory.role === 'output');
+
+        if(in1 && in2 && in1.memory.resource && in2.memory.resource){
+            let recipe = REACTIONS[in1.memory.resource] && REACTIONS[in1.memory.resource][in2.memory.resource];
+            if(recipe
+                && (in1.store[in1.memory.resource] || 0) >= 5
+                && (in2.store[in2.memory.resource] || 0) >= 5){
+                for(let out of outputs){
+                    if(out.cooldown > 0) continue;
+                    if(out.memory.resource !== recipe) continue;
+                    let cap = out.memory.amount || 3000;
+                    if((out.store[recipe] || 0) >= cap - 5) continue;
+                    if(out.store.getFreeCapacity(recipe) < 5) continue;
+                    let r = out.runReaction(in1, in2);
+                    if(r !== OK){
+                        console.log("["+room.name+"] runLabs: runReaction "+out.id+" -> "+recipe+" failed "+r);
+                    }
+                }
+            }
+        }
+
+        for(let b of labs.filter(l => l.memory.role === 'booster')){
+            let resource = b.memory.resource;
+            if(!resource) continue;
+            if((b.store[resource] || 0) < 30) continue;
+            let targets = b.pos.findInRange(FIND_MY_CREEPS, 1, {
+                filter: c => c.memory.boostsNeeded && c.memory.boostsNeeded.includes(resource)
+            });
+            if(targets.length){
+                let r = b.boostCreep(targets[0]);
+                if(r === OK){
+                    targets[0].memory.boostsNeeded = targets[0].memory.boostsNeeded.filter(x => x !== resource);
+                    console.log("["+room.name+"] runLabs: boosted "+targets[0].name+" with "+resource);
+                }
+            }
+        }
+    },
+
+    runFactory(room){
+        if(!room.controller || room.controller.level < 7) return;
+        let factory = room.factory;
+        if(!factory) return;
+        if(factory.memory.enabled === false) return;
+        if(factory.cooldown > 0) return;
+
+        let target = factory.memory.target;
+        if(!target) return;
+        let recipe = COMMODITIES[target];
+        if(!recipe) return;
+        if(recipe.level && factory.level !== recipe.level) return;
+
+        let outputCap = factory.memory.outputCap || 10000;
+        let stored = room.storage ? (room.storage.store[target] || 0) : 0;
+        if(stored + (factory.store[target] || 0) >= outputCap) return;
+
+        let ready = Object.keys(recipe.components).every(c =>
+            (factory.store[c] || 0) >= recipe.components[c]
+        );
+        if(!ready) return;
+        if(factory.store.getFreeCapacity() < recipe.amount) return;
+
+        let r = factory.produce(target);
+        if(r !== OK){
+            console.log("["+room.name+"] runFactory: produce "+target+" failed "+r);
+        }
     },
 
     runMiningCrew(room) {

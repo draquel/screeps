@@ -647,6 +647,7 @@ module.exports = {
         creep.memory.foreignMoveMode = null;
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
+        creep.memory.factoryFeedResource = null;
         creep.say("🛻 Load");
     }
     if (!creep.memory.working && creep.store.getFreeCapacity() === 0) {
@@ -675,7 +676,18 @@ module.exports = {
         }
         creep.memory.drainResource = null;
 
-        // Priority 2: lab fill resource goes to lab if still needed
+        // Priority 2: factory feed resource goes to factory if still needed
+        let factoryFeedResource = creep.memory.factoryFeedResource;
+        if (factoryFeedResource && carried.includes(factoryFeedResource)) {
+            let factory = creep.room.factory;
+            if (factory && factory.store.getFreeCapacity() > 0) {
+                work.workerTransfer(creep, factory, factoryFeedResource);
+                return;
+            }
+        }
+        creep.memory.factoryFeedResource = null;
+
+        // Priority 3: lab fill resource goes to lab if still needed
         let labResource = carried.find(r => this.getRoomLabResource(creep.room, r) != null);
         if (labResource) {
             let lab = this.getRoomLabResource(creep.room, labResource);
@@ -689,7 +701,7 @@ module.exports = {
             }
         }
 
-        // Priority 3: room mineral tops up terminal to cap
+        // Priority 4: room mineral tops up terminal to cap
         if (roomMineral && carried.includes(roomMineral)) {
             let terminal = creep.room.terminal;
             if (terminal) {
@@ -707,7 +719,7 @@ module.exports = {
             }
         }
 
-        // Priority 4: foreign mineral routes based on mode
+        // Priority 5: foreign mineral routes based on mode
         let foreignMoveResource = creep.memory.foreignMoveResource;
         let foreignMoveMode = creep.memory.foreignMoveMode;
         if (foreignMoveResource && carried.includes(foreignMoveResource)) {
@@ -740,6 +752,7 @@ module.exports = {
         creep.memory.foreignMoveMode = null;
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
+        creep.memory.factoryFeedResource = null;
 
         // Priority 1: drain labs with wrong or unassigned contents
         let drainTarget = this.getLabDrainTarget(creep);
@@ -752,7 +765,7 @@ module.exports = {
             return;
         }
 
-        // Priority 2: fill labs that need topping up
+        // Priority 2: fill input/booster labs that need topping up
         let labTarget = this.getLabFillTargetRaw(creep.room);
         if (labTarget) {
             creep.memory.labFillResource = labTarget.resource;
@@ -763,7 +776,38 @@ module.exports = {
             return;
         }
 
-        // Priority 3: drain miner containers, and top up terminal from storage when needed
+        // Priority 3: drain output labs above their threshold to storage
+        let productDrain = this.getLabProductDrainTarget(creep.room);
+        if (productDrain) {
+            work.collectResource(creep, {
+                storages: false, containers: false, terminals: false,
+                drops: false, tombs: false, links: false, sources: false, outputLabs: true,
+            }, productDrain.resource);
+            return;
+        }
+
+        // Priority 4: feed factory inputs from storage/terminal
+        let factoryNeed = this.getFactoryInputNeed(creep.room);
+        if (factoryNeed) {
+            creep.memory.factoryFeedResource = factoryNeed.resource;
+            work.collectResource(creep, {
+                storages: true, containers: false, terminals: true,
+                drops: false, tombs: false, links: false, sources: false,
+            }, factoryNeed.resource);
+            return;
+        }
+
+        // Priority 5: drain factory output / stale ingredients to storage
+        let factoryDrain = this.getFactoryDrainTarget(creep.room);
+        if (factoryDrain) {
+            work.collectResource(creep, {
+                storages: false, containers: false, terminals: false,
+                drops: false, tombs: false, links: false, sources: false, factories: true,
+            }, factoryDrain.resource);
+            return;
+        }
+
+        // Priority 6: drain miner containers, and top up terminal from storage when needed
         if (roomMineral) {
             let terminal = creep.room.terminal;
             let terminalHeld = terminal ? (terminal.store[roomMineral] || 0) : 0;
@@ -782,7 +826,7 @@ module.exports = {
             }
         }
 
-        // Priority 4: manage foreign minerals
+        // Priority 7: manage foreign minerals
         if (creep.room.terminal && creep.room.storage) {
             let foreignSellThreshold = creep.room.memory.foreignMineralSellThreshold || 10000;
             let foreignSellBuffer = creep.room.memory.foreignMineralSellBuffer || 2000;
@@ -833,7 +877,7 @@ module.exports = {
             }
         }
 
-        // Priority 5: loose minerals from containers or drops
+        // Priority 8: loose minerals from containers or drops
         let looseMineral = this.getLooseMineralTarget(creep, roomMineral);
         if (looseMineral) {
             work.collectResource(creep, {
@@ -851,9 +895,10 @@ module.exports = {
         }
     }
 },  // Used in collect phase - checks raw lab need without enRoute adjustment
+//  Only considers input/booster labs - output labs accumulate from reactions, not transporter fills
 getLabFillTargetRaw(room) {
     let labs = room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_LAB
+        filter: s => s.structureType === STRUCTURE_LAB && s.memory.role !== 'output'
     });
     for (let lab of labs) {
         let resource = lab.memory.resource;
@@ -870,7 +915,7 @@ getLabFillTargetRaw(room) {
 // Used in working phase - accounts for what creep is already carrying
 getLabFillTarget(creep) {
     let labs = creep.room.find(FIND_MY_STRUCTURES, {
-        filter: s => s.structureType === STRUCTURE_LAB
+        filter: s => s.structureType === STRUCTURE_LAB && s.memory.role !== 'output'
     });
     for (let lab of labs) {
         let resource = lab.memory.resource;
@@ -884,13 +929,73 @@ getLabFillTarget(creep) {
     }
     return null;
 },
-  // Returns the lab structure assigned to a resource, or null
+  // Returns the first input/booster lab assigned to a resource, or null
+  // Output labs are excluded so working-phase deposits don't loop product back into the output.
   getRoomLabResource(room, resource) {
     let labs = room.find(FIND_MY_STRUCTURES, {
       filter: (s) =>
-        s.structureType === STRUCTURE_LAB && s.memory.resource === resource,
+        s.structureType === STRUCTURE_LAB
+        && s.memory.role !== 'output'
+        && s.memory.resource === resource,
     });
     return labs.length ? labs[0] : null;
+  },
+
+  // Returns { lab, resource } for the first output lab whose product is at/over drain threshold
+  getLabProductDrainTarget(room) {
+    let labs = room.find(FIND_MY_STRUCTURES, {
+      filter: (s) =>
+        s.structureType === STRUCTURE_LAB
+        && s.memory.role === 'output'
+        && s.memory.resource,
+    });
+    for (let lab of labs) {
+      let resource = lab.memory.resource;
+      let threshold = lab.memory.drainThreshold || 1500;
+      if ((lab.store[resource] || 0) >= threshold) {
+        return { lab, resource };
+      }
+    }
+    return null;
+  },
+
+  // Returns { resource, factory } for the first under-staged factory input, or null
+  getFactoryInputNeed(room) {
+    let factory = room.factory;
+    if (!factory) return null;
+    let target = factory.memory.target;
+    if (!target) return null;
+    let recipe = COMMODITIES[target];
+    if (!recipe) return null;
+
+    for (let resource in recipe.components) {
+      if (resource === RESOURCE_ENERGY) continue;
+      let need = recipe.components[resource];
+      let cap = factory.memory.inputCap !== undefined ? factory.memory.inputCap : need * 4;
+      let have = factory.store[resource] || 0;
+      if (have >= cap) continue;
+      let available = (room.storage ? (room.storage.store[resource] || 0) : 0)
+                    + (room.terminal ? (room.terminal.store[resource] || 0) : 0);
+      if (available > 0) return { resource, factory };
+    }
+    return null;
+  },
+
+  // Returns { factory, resource } for the first thing in the factory we want out:
+  // the produced commodity, or stale ingredients not in the current recipe.
+  getFactoryDrainTarget(room) {
+    let factory = room.factory;
+    if (!factory) return null;
+    let target = factory.memory.target;
+    let recipe = target ? COMMODITIES[target] : null;
+
+    for (let resource in factory.store) {
+      if ((factory.store[resource] || 0) === 0) continue;
+      if (resource === RESOURCE_ENERGY) continue;
+      if (resource === target) return { factory, resource };
+      if (!recipe || !recipe.components[resource]) return { factory, resource };
+    }
+    return null;
   },
 
   // Returns the resource type of the best loose mineral target, or null

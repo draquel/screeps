@@ -190,6 +190,21 @@ if(options.containers){
             let labs = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LAB && s.store.getUsedCapacity(resource) > 0 && s.memory.resource != resource }})
             targets.push(...labs);
         }
+        if(options.outputLabs){
+            let outLabs = creep.room.find(FIND_STRUCTURES, {filter:(s) =>
+                s.structureType === STRUCTURE_LAB
+                && s.memory.role === 'output'
+                && s.memory.resource === resource
+                && s.store.getUsedCapacity(resource) > 0
+            });
+            targets.push(...outLabs);
+        }
+        if(options.factories){
+            let factory = creep.room.factory;
+            if(factory && factory.store.getUsedCapacity(resource) > 0){
+                targets.push(factory);
+            }
+        }
 
         if(options.deposits){
             let deposits = creep.room.find(FIND_DEPOSITS,{filter:d => d.depositType === resource })
@@ -311,7 +326,7 @@ if(options.containers){
 
         if(options.factory) {
             target = []
-            if(creep.room.factory !== undefined){
+            if(creep.room.factory != null){
                 if(creep.room.factory.store.getFreeCapacity(resource) > 0 && creep.room.factory.store.getUsedCapacity(resource) < 10000){
                     target.push(creep.room.factory)
                 }

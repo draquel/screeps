@@ -41,6 +41,25 @@ module.exports = {
             configurable: true
         });
 
+        Object.defineProperty(Room.prototype, 'factory', {
+            get: function () {
+                if (!this._factory) {
+                    if (this.memory.factoryId === undefined) {
+                        let result = this.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_FACTORY});
+                        this.memory.factoryId = result.length ? result[0].id : null;
+                    }
+                    this._factory = this.memory.factoryId != null ? Game.getObjectById(this.memory.factoryId) : null;
+                }
+                return this._factory;
+            },
+            set: function (newValue) {
+                this.memory.factoryId = newValue ? newValue.id : null;
+                this._factory = newValue;
+            },
+            enumerable: false,
+            configurable: true
+        });
+
         Object.defineProperty(Room.prototype, 'deposit', {
           //get: function () {},
             set: function (newValue) {
