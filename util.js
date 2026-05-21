@@ -346,6 +346,14 @@ var util = {
           5:{"CARRY":15,"MOVE":15},
           6:{"CARRY":20,"MOVE":15},
         },
+        "mineralTransporter": {
+            1: {"CARRY":3,  "MOVE":3},
+            2: {"CARRY":6,  "MOVE":5},
+            3: {"CARRY":8,  "MOVE":8},
+            4: {"CARRY":12, "MOVE":12},
+            5: {"CARRY":15, "MOVE":15},
+            6: {"CARRY":20, "MOVE":15},
+        },
         "miner":{
           1:{"WORK":2,"CARRY":1,"MOVE":1},
           2:{"WORK":4,"CARRY":2,"MOVE":1},

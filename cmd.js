@@ -34,5 +34,9 @@ module.exports = {
     spawn(room, role, count, opts, expidite = false) { rooms.queCreep(room, role, count, opts, expidite) },
     clearQueue(room) { rooms.clearQue(room) },
     unstuckQueue(room) { rooms.unstuckSpawnQueue(room) },
-    sellResources(room, amount = 10000){ rooms.sellResources(room,amount) }
+    sellResources(room, resource = null, amount = 10000){ 
+      if(resource == null){
+        resource = Game.getObjectById(room.memory.mineral).resource
+      }
+      rooms.sellForeignResources(room,resource,amount) }
 }

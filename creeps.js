@@ -145,7 +145,9 @@ module.exports = {
       case "transporter2":
         this.runTransporter2(creep);
         break;
-
+      case "mineralTransporter":
+        this.runMineralTransporter(creep);
+        break;
       case "healer":
         this.runHealer(creep);
         break;
@@ -168,7 +170,7 @@ module.exports = {
       }
     } else {
       if (this.inTargetRoom(creep)) {
-        util.patrol(creep)
+        util.patrol(creep);
         //let target = creep.room.controller;
         //if (target != null) {
         //  creep.moveTo(target);
@@ -366,7 +368,7 @@ module.exports = {
               s.store.getFreeCapacity(resource) > 250) ||
             (s.structureType === STRUCTURE_TERMINAL &&
               s.store.getFreeCapacity(resource) > 0 &&
-              s.store.getUsedCapacity(resource) < 10000) ||
+              s.store.getUsedCapacity(resource) < 50000) ||
             (resource === RESOURCE_ENERGY &&
               s.structureType === STRUCTURE_LAB &&
               s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
@@ -635,6 +637,371 @@ module.exports = {
         }
       }
     }
+  },
+
+  runMineralTransporter(creep) {
+    if (creep.memory.working && creep.store.getUsedCapacity() === 0) {
+      creep.memory.working = false;
+      creep.memory.targetDeposit = null;
+      creep.say("🛻 Load");
+    }
+    if (!creep.memory.working && creep.store.getFreeCapacity() === 0) {
+      creep.memory.working = true;
+      creep.memory.targetCollect = null;
+      creep.say("🚚 Deliver");
+    }
+
+    if (creep.memory.working) {
+      let carried = Object.keys(creep.store).filter((r) => creep.store[r] > 0);
+      if (!carried.length) return;
+
+      // Priority 1: if carrying a drained lab resource, move it to storage
+      // Check if what we're carrying came from a drain job (not a lab fill)
+      let drainResource = creep.memory.drainResource;
+      if (drainResource && carried.includes(drainResource)) {
+        if (
+          creep.room.storage &&
+          creep.room.storage.store.getFreeCapacity() > 0
+        ) {
+          work.workerTransfer(creep, creep.room.storage, drainResource);
+          return;
+        }
+        // fallback: terminal if storage is unavailable
+        if (
+          creep.room.terminal &&
+          creep.room.terminal.store.getFreeCapacity() > 0
+        ) {
+          work.workerTransfer(creep, creep.room.terminal, drainResource);
+          return;
+        }
+      }
+      creep.memory.drainResource = null;
+
+      // Priority 2: if carrying a lab resource, deliver to its lab if it still has room
+      let labResource = carried.find(
+        (r) => this.getRoomLabResource(creep.room, r) != null,
+      );
+      if (labResource) {
+        let lab = this.getRoomLabResource(creep.room, labResource);
+        if (lab) {
+          let target = lab.memory.amount || 2000;
+          let current = lab.store[labResource] || 0;
+          if (current < target && lab.store.getFreeCapacity(labResource) > 0) {
+            work.workerTransfer(creep, lab, labResource);
+            return;
+          }
+          // Lab is full or at its target — fall through to storage below
+        }
+      }
+
+      // Priority 3: if carrying room mineral, top up terminal to cap
+      let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
+      if (roomMineral && carried.includes(roomMineral)) {
+          let terminal = creep.room.terminal;
+          if (terminal) {
+              let terminalHeld = terminal.store[roomMineral] || 0;
+              let terminalCap = creep.room.memory.mineralTerminalCap || 25000;
+              if (terminalHeld < terminalCap) {
+                  if (terminal.store.getFreeCapacity() > 0 && terminal.store.getFreeCapacity() > (10000 - terminal.store.getUsedCapacity(RESOURCE_ENERGY))) {
+                      work.workerTransfer(creep, terminal, roomMineral);
+                      return;
+                  } else {
+                      // Terminal is full - can't deliver room mineral right now
+                      // Clear deposit target and fall through to storage as temporary hold
+                      creep.memory.targetDeposit = null;
+                      console.log(creep.name+": Terminal full, holding "+roomMineral+" in storage temporarily");
+                  }
+              }
+          }
+      }
+
+      // Priority 4: deliver foreign mineral to correct destination based on mode
+      let foreignMoveResource = creep.memory.foreignMoveResource;
+      let foreignMoveMode = creep.memory.foreignMoveMode;
+      if (foreignMoveResource && carried.includes(foreignMoveResource)) {
+        if (foreignMoveMode === "toTerminal") {
+          // Pushing excess back to terminal for selling
+          let terminal = creep.room.terminal;
+          if (terminal && terminal.store.getFreeCapacity() > 0) {
+            work.workerTransfer(creep, terminal, foreignMoveResource);
+            return;
+          }
+        } else {
+          // Normal inbound flow - always goes to storage
+          if (
+            creep.room.storage &&
+            creep.room.storage.store.getFreeCapacity() > 0
+          ) {
+            work.workerTransfer(creep, creep.room.storage, foreignMoveResource);
+            return;
+          }
+        }
+        creep.memory.foreignMoveResource = null;
+        creep.memory.foreignMoveMode = null;
+      }
+
+      // Priority 5: everything else to storage
+      if (
+        creep.room.storage &&
+        creep.room.storage.store.getFreeCapacity() > 0
+      ) {
+        let resource = carried.reduce((a, b) =>
+          creep.store[a] >= creep.store[b] ? a : b,
+        );
+        work.workerTransfer(creep, creep.room.storage, resource);
+        return;
+      }
+    } else {
+      let roomMineral = creep.room.mineral
+        ? creep.room.mineral.mineralType
+        : null;
+
+      // Priority 1: drain labs that have wrong or unassigned contents
+      let drainTarget = this.getLabDrainTarget(creep);
+      if (drainTarget) {
+        creep.memory.drainResource = drainTarget.resource;
+        work.collectResource(
+          creep,
+          {
+            storages: false,
+            containers: false,
+            terminals: false,
+            drops: false,
+            tombs: false,
+            links: false,
+            sources: false,
+            labs: true,
+          },
+          drainTarget.resource,
+        );
+        return;
+      }
+      creep.memory.drainResource = null;
+
+      // Priority 2: collect for labs that need filling
+      let labTarget = this.getLabFillTarget(creep);
+      if (labTarget) {
+        creep.memory.labFillResource = labTarget.resource;
+        work.collectResource(
+          creep,
+          {
+            storages: true,
+            containers: false,
+            terminals: true,
+            drops: false,
+            tombs: false,
+            links: false,
+            sources: false,
+          },
+          labTarget.resource,
+        );
+        return;
+      }
+      creep.memory.labFillResource = null;
+
+      // Priority 3: top up terminal with room mineral
+      if (roomMineral) {
+        let terminal = creep.room.terminal;
+        let terminalHeld = terminal ? terminal.store[roomMineral] || 0 : 0;
+        let terminalCap = creep.room.memory.mineralTerminalCap || 25000;
+        if (terminalHeld < terminalCap) {
+          let hasInStorage =
+            creep.room.storage &&
+            (creep.room.storage.store[roomMineral] || 0) > 0;
+          let hasInContainers =
+            creep.room.find(FIND_STRUCTURES, {
+              filter: (s) =>
+                s.structureType === STRUCTURE_CONTAINER &&
+                (s.store[roomMineral] || 0) > 0,
+            }).length > 0;
+          if (hasInStorage || hasInContainers) {
+            work.collectResource(
+              creep,
+              {
+                storages: true,
+                containers: true,
+                terminals: false,
+                drops: false,
+                tombs: false,
+                links: false,
+                sources: false,
+              },
+              roomMineral,
+            );
+            return;
+          }
+        }
+      }
+
+      // Priority 4: manage foreign minerals between terminal and storage
+      if (creep.room.terminal && creep.room.storage) {
+        let foreignSellThreshold =
+          creep.room.memory.foreignMineralSellThreshold || 10000;
+        let foreignSellBuffer =
+          creep.room.memory.foreignMineralSellBuffer || 2000;
+
+        // First check if any foreign mineral in storage exceeds threshold - push back to terminal
+        let excessForeign = Object.keys(creep.room.storage.store).find((r) => {
+          if (r === RESOURCE_ENERGY) return false;
+          if (r === roomMineral) return false;
+          let storageAmount = creep.room.storage.store[r] || 0;
+          let terminalAmount = creep.room.terminal.store[r] || 0;
+          return (
+            storageAmount + terminalAmount >
+            foreignSellThreshold + foreignSellBuffer
+          );
+        });
+
+        if (excessForeign) {
+          // Push excess from storage to terminal for selling
+          creep.memory.foreignMoveResource = excessForeign;
+          creep.memory.foreignMoveMode = "toTerminal";
+          work.collectResource(
+            creep,
+            {
+              storages: true,
+              containers: false,
+              terminals: false,
+              drops: false,
+              tombs: false,
+              links: false,
+              sources: false,
+            },
+            excessForeign,
+          );
+          return;
+        }
+
+        // Check if terminal has foreign minerals that fit under the storage threshold
+        let inboundForeign = Object.keys(creep.room.terminal.store).find(
+          (r) => {
+            if (r === RESOURCE_ENERGY) return false;
+            if (r === roomMineral) return false;
+            let terminalAmount = creep.room.terminal.store[r] || 0;
+            if (terminalAmount <= 0) return false;
+            let storageAmount = creep.room.storage.store[r] || 0;
+            // Only pull into storage if combined total is under threshold
+            return storageAmount + terminalAmount <= foreignSellThreshold;
+          },
+        );
+
+        if (inboundForeign) {
+          // Pull from terminal into storage as normal inbound flow
+          creep.memory.foreignMoveResource = inboundForeign;
+          creep.memory.foreignMoveMode = "toStorage";
+          work.collectResource(
+            creep,
+            {
+              storages: false,
+              containers: false,
+              terminals: true,
+              drops: false,
+              tombs: false,
+              links: false,
+              sources: false,
+            },
+            inboundForeign,
+          );
+          return;
+        }
+
+        creep.memory.foreignMoveResource = null;
+        creep.memory.foreignMoveMode = null;
+      }
+
+      // Priority 5: loose minerals from containers or drops
+      let looseMineral = this.getLooseMineralTarget(creep, roomMineral);
+      if (looseMineral) {
+        work.collectResource(
+          creep,
+          {
+            storages: false,
+            containers: true,
+            terminals: false,
+            drops: true,
+            tombs: true,
+            links: false,
+            sources: false,
+          },
+          looseMineral,
+        );
+        return;
+      }
+    }
+  },
+  // Returns { lab, resource } for the highest-priority lab that needs filling,
+  // accounting for what the creep is already carrying toward it
+  getLabFillTarget(creep) {
+    let labs = creep.room.find(FIND_MY_STRUCTURES, {
+      filter: (s) => s.structureType === STRUCTURE_LAB,
+    });
+    for (let lab of labs) {
+      let resource = lab.memory.resource;
+      if (!resource) continue;
+      let target = lab.memory.amount || 2000;
+      let current = lab.store[resource] || 0;
+      let enRoute = creep.store[resource] || 0;
+      // only assign if the lab still needs more than what we're already carrying
+      if (current + enRoute < target) {
+        return { lab, resource };
+      }
+    }
+    return null;
+  },
+
+  // Returns the lab structure assigned to a resource, or null
+  getRoomLabResource(room, resource) {
+    let labs = room.find(FIND_MY_STRUCTURES, {
+      filter: (s) =>
+        s.structureType === STRUCTURE_LAB && s.memory.resource === resource,
+    });
+    return labs.length ? labs[0] : null;
+  },
+
+  // Returns the resource type of the best loose mineral target, or null
+  getLooseMineralTarget(creep, roomMineral) {
+    let drops = creep.room.find(FIND_DROPPED_RESOURCES, {
+      filter: (d) =>
+        d.resourceType !== RESOURCE_ENERGY && d.resourceType !== roomMineral,
+    });
+    if (drops.length) return drops[0].resourceType;
+
+    let tombs = creep.room.find(FIND_TOMBSTONES, {
+      filter: (t) =>
+        Object.keys(t.store).some(
+          (r) => r !== RESOURCE_ENERGY && r !== roomMineral && t.store[r] > 0,
+        ),
+    });
+    if (tombs.length) {
+      let resource = Object.keys(tombs[0].store).find(
+        (r) =>
+          r !== RESOURCE_ENERGY && r !== roomMineral && tombs[0].store[r] > 0,
+      );
+      return resource || null;
+    }
+
+    return null;
+  },
+  // Returns { lab, resource } for the first lab that contains a resource
+  // that doesn't match its assigned memory.resource, or null
+  getLabDrainTarget(creep) {
+    let labs = creep.room.find(FIND_MY_STRUCTURES, {
+      filter: (s) => s.structureType === STRUCTURE_LAB,
+    });
+    for (let lab of labs) {
+      let assigned = lab.memory.resource;
+      let contents = Object.keys(lab.store).filter(
+        (r) => r !== RESOURCE_ENERGY && lab.store[r] > 0,
+      );
+      if (!contents.length) continue;
+      // drain if unassigned, or if what's inside doesn't match assignment
+      for (let resource of contents) {
+        if (!assigned || assigned !== resource) {
+          return { lab, resource };
+        }
+      }
+    }
+    return null;
   },
 
   runClaimer(creep) {

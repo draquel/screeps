@@ -157,17 +157,25 @@ module.exports =  {
             targets.push(...storages);
         }
         if(options.terminals){
-          let used = Game.getObjectById(Memory.rooms[creep.room].terminal).store.getUsedCapacity(resource)
-          if((resource !== RESOURCE_ENERGY && resource !== creep.room.mineral) || (resource == RESOURCE_ENERGY && used > 11000) || (resource == Memory.rooms[creep.room].mineral && used > 26000)){}else{
-            targets.push(creep.room.terminal)
-          }
+           let terminal = creep.room.terminal;
+            if(terminal){
+                let used = terminal.store.getUsedCapacity(resource) || 0;
+                let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
+                let shouldCollect =
+                    (resource !== RESOURCE_ENERGY && resource !== roomMineral) ||
+                    (resource === RESOURCE_ENERGY && used > 11000) ||
+                    (resource === roomMineral && used > 26000);
+                if(shouldCollect){
+                    targets.push(terminal);
+                }
+            }
         }
         if(options.links){
             let links = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK && s.id === creep.room.memory.targetLink && s.store.getUsedCapacity(resource) > 80 }})
             targets.push(...links);
         }
         if(options.labs){
-            let labs = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LAB && s.store.getUsedCapacity(resource) > 0 }})
+            let labs = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LAB && s.store.getUsedCapacity(resource) > 0 && s.memory.resource != resource }})
             targets.push(...labs);
         }
 
@@ -218,7 +226,7 @@ module.exports =  {
         return false;
     },
 
-    collectResource(creep, options = {sources:false,containers:false,storages:false,links:false,tombs:true,drops:true,ruins:true,deposits:false,findOptions:{}}, resource = RESOURCE_ENERGY){
+    collectResource(creep, options = {sources:false,containers:false,storages:false,links:false,labs:false,tombs:true,drops:true,ruins:true,deposits:false,findOptions:{}}, resource = RESOURCE_ENERGY){
         let existingTarget = creep.memory.targetCollect == null ? null : Game.getObjectById(creep.memory.targetCollect)
         if(existingTarget != null){
           if(this.collectTargetResource(creep,existingTarget,resource)){
@@ -276,17 +284,16 @@ module.exports =  {
         }
 
         if(options.terminal) {
-            target = []
-            if(creep.room.terminal !== undefined){
-              let terminal = Game.getObjectById(Memory.rooms[creep.room.name].terminal)
-              if(
-                (resource == RESOURCE_ENERGY && terminal.getUsedCapacity(resource) < 10000 && terminal.store.getFreeCapacity(resource) > 0 ) 
-                || (resource == Memory.rooms[creep.room.name].mineral && terminal.getUsedCapacity(resource) < 25000 && terminal.store.getFreeCapacity(resource) > 0 )
-              ){
-                    target.push(creep.room.terminal)
-              }
+            let terminal = creep.room.terminal;
+            if(terminal){
+                let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
+                let shouldDeposit =
+                    (resource === RESOURCE_ENERGY && terminal.store.getUsedCapacity(resource) < 10000 && terminal.store.getFreeCapacity(resource) > 0) ||
+                    (resource === roomMineral && terminal.store.getUsedCapacity(resource) < 25000 && terminal.store.getFreeCapacity(resource) > 0);
+                if(shouldDeposit){
+                    targetList.push(terminal);
+                }
             }
-            if(target != null && target.length > 0){ targetList.push(...target) }
         }
 
         if(options.factory) {
