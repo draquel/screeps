@@ -125,7 +125,7 @@ module.exports =  {
     *   resource collection
     */
 
-    getCollectTarget(creep,options = {sources:false,containers:false,storages:false,links:false,labs:false,tombs:true,deposits:false,drops:true,findOptions:{}},resource = RESOURCE_ENERGY){
+    getCollectTarget(creep,options = {sources:false,containers:false,storages:false,links:false,labs:false,terminals:true,tombs:true,deposits:false,drops:true,findOptions:{}},resource = RESOURCE_ENERGY){
         let taken = util.getCreepProp(creep.room.find(FIND_MY_CREEPS),'targetCollect');
         let targets = [];
         
@@ -155,6 +155,12 @@ module.exports =  {
                 }
             }
             targets.push(...storages);
+        }
+        if(options.terminals){
+          let used = Game.getObjectById(Memory.rooms[creep.room].terminal).store.getUsedCapacity(resource)
+          if((resource !== RESOURCE_ENERGY && resource !== creep.room.mineral) || (resource == RESOURCE_ENERGY && used > 11000) || (resource == Memory.rooms[creep.room].mineral && used > 26000)){}else{
+            targets.push(creep.room.terminal)
+          }
         }
         if(options.links){
             let links = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_LINK && s.id === creep.room.memory.targetLink && s.store.getUsedCapacity(resource) > 80 }})
@@ -272,11 +278,15 @@ module.exports =  {
         if(options.terminal) {
             target = []
             if(creep.room.terminal !== undefined){
-                if(creep.room.terminal.store.getFreeCapacity(resource) > 0 && creep.room.terminal.store.getUsedCapacity(resource) < (resource == RESOURCE_ENERGY) ? 10000 : 100000){
+              let terminal = Game.getObjectById(Memory.rooms[creep.room.name].terminal)
+              if(
+                (resource == RESOURCE_ENERGY && terminal.getUsedCapacity(resource) < 10000 && terminal.store.getFreeCapacity(resource) > 0 ) 
+                || (resource == Memory.rooms[creep.room.name].mineral && terminal.getUsedCapacity(resource) < 25000 && terminal.store.getFreeCapacity(resource) > 0 )
+              ){
                     target.push(creep.room.terminal)
-                }
+              }
             }
-            if(target != null){ targetList.push(...target) }
+            if(target != null && target.length > 0){ targetList.push(...target) }
         }
 
         if(options.factory) {

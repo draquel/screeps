@@ -86,53 +86,67 @@ module.exports = {
         }
     },
 
-    runTerminal(room){
-      if(room.terminal == null){
-        return
-      }
+    runTerminal(room) {
+        if (!room.terminal) return;
+        if (room.terminal.cooldown > 0) return;
 
-      if(room.terminal.cooldown > 0){
-        return
-      }
-
-      if(room.terminal.memory.deals && room.terminal.memory.deals.length > 0){
-       let deal = room.terminal.memory.deals.shift()
-       let order = Game.market.getOrderById(deal.id)
-       let result = -10
-       if(order != null && order.remainingAmount >= deal.amount){
-         console.log("["+room.name+"] Executing Deal ["+deal.id+"]")
-         result = Game.market.deal(deal.id,deal.amount,room.name); 
-       }
-       if(result != OK){
-         console.log("Failed to execute: "+result)
-       }
-      }
-
-
-      if(room.controller.level >= 8){
-        //check for other rooms needing room resource:
-        // TODO 
-        //    runs too ofter
-        //    needs handling for visibility constraintst
-
-        let rooms = Object.keys(Game.rooms)
-        for(let i = 0; i < rooms.length; i++){
-          let r = Game.rooms[rooms[i]]
-          if(!r || room.name == r.name || room.mineral == r.mineral){
-            continue;
-          }
-          if(!r.terminal){ /*console.log("["+room.name+"] no terminal reference for "+r.name);*/ continue }
-
-          let deficit = 10000 - r.terminal.store.getUsedCapacity(room.mineral);
-          if(deficit > 0 && room.terminal.store.getUsedCapacity(room.mineral) > deficit){
-            room.terminal.send(room.mineral,deficit,r.name,"Sharing "+room.mineral)
-            console.log("["+room.name+"] Sending "+deficit+" "+room.mineral+" to "+r.name)
-          }
+        // Process queued deals first (your existing logic - keep this)
+        if (room.terminal.memory.deals && room.terminal.memory.deals.length > 0) {
+            let deal = room.terminal.memory.deals.shift();
+            let order = Game.market.getOrderById(deal.id);
+            if (order != null && order.remainingAmount >= deal.amount) {
+                let result = Game.market.deal(deal.id, deal.amount, room.name);
+                if (result != OK) { console.log("["+room.name+"] Deal failed: "+result); }
+            }
+            return; // one terminal action per tick
         }
 
-      }
-    },
+        // Resource sharing: only push, don't pull
+        if (room.controller.level < 6) return;
 
+        let mineral = room.mineral;
+        if (!mineral) return;
+
+        let stock = room.terminal.store[mineral.mineralType] || 0;
+        let sendThreshold = 10000; // only send when we have enough surplus
+        let sendAmount = 5000;     // how much to send per transaction
+
+        if (stock < sendThreshold) return;
+
+        // Iterate over known room names from Memory, not Game.rooms
+        let ownedRooms = Object.keys(Memory.rooms);
+        for (let i = 0; i < ownedRooms.length; i++) {
+            let targetName = ownedRooms[i];
+            if (targetName === room.name) continue;
+
+            // Read the target's mineral type from its memory - no visibility needed
+            let targetMem = Memory.rooms[targetName];
+            if (!targetMem) continue;
+
+            // Skip if same mineral type (they mine their own)
+            // Only share if they mine something different (or nothing yet)
+            let targetMineralId = targetMem.mineral; // stored by room.prototype.js
+            let targetMineral = targetMineralId ? Game.getObjectById(targetMineralId) : null;
+            if (targetMineral && targetMineral.mineralType === mineral.mineralType) continue;
+
+            // Check how much of our mineral they already have stored
+            // We read this from Memory if we've been tracking it, otherwise just send
+            let cost = Game.market.calcTransactionCost(sendAmount, room.name, targetName);
+            let energyBuffer = room.terminal.store[RESOURCE_ENERGY] || 0;
+
+            if (energyBuffer < cost + 5000) { // keep 5k energy reserve
+                console.log("["+room.name+"] Terminal: Not enough energy to send (need "+cost+", have "+energyBuffer+")");
+                return;
+            }
+
+            console.log("["+room.name+"] Terminal: Sending "+sendAmount+" "+mineral.mineralType+" to "+targetName);
+            let result = room.terminal.send(mineral.mineralType, sendAmount, targetName, "mineral share");
+            if (result !== OK) {
+                console.log("["+room.name+"] Terminal: Send failed: "+result);
+            }
+            return; // one send per tick, done
+        }
+    },
     runFactory(room){
 
     },
