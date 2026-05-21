@@ -38,5 +38,7 @@ module.exports = {
       if(resource == null){
         resource = Game.getObjectById(room.memory.mineral).resource
       }
-      rooms.sellForeignResources(room,resource,amount) }
+      rooms.sellForeignResources(room,resource,amount) 
+    },
+    runTest(creep){ util.runTest(creep) }
 }

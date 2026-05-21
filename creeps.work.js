@@ -143,10 +143,22 @@ module.exports =  {
           let ruins = creep.room.find(FIND_RUINS,{filter:(r) => r.store.getUsedCapacity(resource) > 0})
           targets.push(...ruins);
         }
-        if(options.containers){
+        /*if(options.containers){
             let containers = creep.room.find(FIND_STRUCTURES,{filter:(s) => { return s.structureType === STRUCTURE_CONTAINER && s.store.getUsedCapacity(resource) > (taken.filter((currentItem) => currentItem === s.id).length+1) * creep.store.getFreeCapacity(resource) }})
             targets.push(...containers);
+        }*/
+if(options.containers){
+    let containers = creep.room.find(FIND_STRUCTURES, {filter:(s) => {
+        if(s.structureType !== STRUCTURE_CONTAINER) return false;
+        if(options.relaxedContainers) {
+            // just needs something in it - used by mineral transporter
+            return s.store.getUsedCapacity(resource) > 0;
         }
+        // standard check - needs more than a full creep load to avoid racing
+        return s.store.getUsedCapacity(resource) > (taken.filter((currentItem) => currentItem === s.id).length + 1) * creep.store.getFreeCapacity(resource);
+    }});
+    targets.push(...containers);
+}
         if(options.storages){
             let storages = []
             if(creep.room.storage !== undefined){
@@ -162,7 +174,7 @@ module.exports =  {
                 let used = terminal.store.getUsedCapacity(resource) || 0;
                 let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
                 let shouldCollect =
-                    (resource !== RESOURCE_ENERGY && resource !== roomMineral) ||
+                    (resource !== RESOURCE_ENERGY && resource !== roomMineral && used > 0) ||
                     (resource === RESOURCE_ENERGY && used > 11000) ||
                     (resource === roomMineral && used > 26000);
                 if(shouldCollect){
@@ -232,12 +244,13 @@ module.exports =  {
           if(this.collectTargetResource(creep,existingTarget,resource)){
             return true
           }
+          // cached target is no longer usable (e.g. drained, wrong type) — drop and search fresh
+          creep.memory.targetCollect = null
         }
 
         let newTarget = this.getCollectTarget(creep,options,resource)
-        if(newTarget != null){
+        if(newTarget != null && this.collectTargetResource(creep,newTarget,resource)){
             creep.memory.targetCollect = newTarget.id
-            this.collectTargetResource(creep,newTarget,resource)
             return true;
         }
         creep.memory.targetCollect = null
@@ -288,7 +301,7 @@ module.exports =  {
             if(terminal){
                 let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
                 let shouldDeposit =
-                    (resource === RESOURCE_ENERGY && terminal.store.getUsedCapacity(resource) < 10000 && terminal.store.getFreeCapacity(resource) > 0) ||
+                    (resource === RESOURCE_ENERGY && terminal.store.getUsedCapacity(resource) < 50000 && terminal.store.getFreeCapacity(resource) > 0) ||
                     (resource === roomMineral && terminal.store.getUsedCapacity(resource) < 25000 && terminal.store.getFreeCapacity(resource) > 0);
                 if(shouldDeposit){
                     targetList.push(terminal);

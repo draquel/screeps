@@ -26,6 +26,7 @@ module.exports = {
             reservations:room.memory.reservations === undefined ? [] : room.memory.reservations,
             storageId: room.memory.storageId !== undefined ? room.memory.storageId : (room.storage ? room.storage.id : null),
             terminalId: room.memory.terminalId !== undefined ? room.memory.terminalId : (room.terminal ? room.terminal.id : null),
+            allowMining: room.memory.allowMining !== undefined ? room.memory.allowMining : true,
             mineralTerminalCap: room.memory.mineralTerminalCap === undefined ? 25000 : room.memory.mineralTerminalCap,
             mineralSellThreshold: room.memory.mineralSellThreshold === undefined ? 100000 : room.memory.mineralSellThreshold,
             foreignMineralSellThreshold: room.memory.foreignMineralSellThreshold === undefined ? 25000 : room.memory.foreignMineralSellThreshold,
@@ -147,7 +148,7 @@ module.exports = {
       let ownedRooms = Object.keys(Memory.rooms);
       for (let i = 0; i < ownedRooms.length; i++) {
           let targetName = ownedRooms[i];
-          if (targetName === room.name || targetName == "E19S64") continue;
+          if (targetName === room.name) continue;
 
           let targetMem = Memory.rooms[targetName];
           if (!targetMem) continue;
@@ -237,7 +238,7 @@ module.exports = {
     },
 
     runMiningCrew(room) {
-        if (room.controller == null || room.controller.level < 6) {
+        if (room.controller == null || room.controller.level < 6 || !room.memory.allowMining) {
             return
         }
 
