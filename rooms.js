@@ -109,7 +109,7 @@ module.exports = {
           return;
       }
 
-      if (!room.controller || room.controller.level < 6) return;
+      if (!room.controller || room.controller.level < 6 || !room.controller.my) return;
 
 
 
@@ -328,10 +328,10 @@ module.exports = {
 
         //Miner check
         if(extractor != null && container != null && mineral.mineralAmount > 0){
-            let miner = util.getCreepsByRole(room,'miner').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
+            let miner = util.getCreepsByRole(room,'mineralMiner').filter( (c) => { return c.memory.targetResource === mineral.mineralType })
             if(!miner.length){
                 console.log('['+room.name+'] Mining: Extractable Minerals ['+mineral.mineralType+'] Detected in '+room.name+' Deploying Miner')
-                this.queCreep(room,'miner',1,{respawn:false,level:4,target:mineral.id,targetResource:mineral.mineralType})
+                this.queCreep(room,'mineralMiner',1,{respawn:false,level:4,target:mineral.id,targetResource:mineral.mineralType})
             }else{
                 console.log('['+room.name+'] Mining: Mineral Extraction In Progress in '+room.name)
             }
@@ -498,7 +498,7 @@ module.exports = {
             return false;
         }
 
-        this.queCreep(room,'miner',1,{respawn:false,level:4,target:container.id,targetResource:mineral.mineralType})
+        this.queCreep(room,'mineralMiner',1,{respawn:false,level:4,target:container.id,targetResource:mineral.mineralType})
         this.queCreep(room,'transporter',1,{respawn:false,level:2,targetResource:mineral.mineralType})
         return true
     },

@@ -49,7 +49,7 @@ var util = {
                     var type = (memory['role'] != null ? memory['role'].charAt(0).toUpperCase()+memory['role'].slice(1)+" L"+memory['level'] : 'Creep')+ ' ('+energy+'E)';
                     var room = Game.rooms[Memory.creeps[name].room];
                     if(Memory.creeps[name].respawn && Object.keys(Memory.rooms).includes(Memory.creeps[name].room)){
-                        if(memory["role"] != "miner" && memory['role'] != "transporter"){
+                        if(memory["role"] != "miner" && memory['role'] != "mineralMiner" && memory['role'] != "transporter"){
                             memory['target'] = null;
                             memory['targetCollect'] = null;
                             memory['targetDeposit'] = null;
@@ -315,6 +315,9 @@ var util = {
     },
 
     getRoleBuild(role,level = 1){
+      // Build order convention: parts listed first are placed at the front of the
+      // body and take damage first. Combat/healer roles use TOUGH -> functional -> MOVE
+      // so the creep keeps damage parts longer than its mobility (retreat capable).
       var buildLib = {
         "scout": {
           1:{"MOVE":6},
@@ -327,7 +330,8 @@ var util = {
           4:{"WORK":6,"CARRY":5,"MOVE":7},
           5:{"WORK":8,"CARRY":6,"MOVE":10},
           6:{"WORK":11,"CARRY":6,"MOVE":12},
-          7:{"WORK":13,"CARRY":6,"MOVE":14},
+          7:{"WORK":17,"CARRY":7,"MOVE":17},
+          8:{"WORK":22,"CARRY":7,"MOVE":21},
         },
         "worker":{
           1:{"WORK":1,"CARRY":2,"MOVE":2},
@@ -336,7 +340,8 @@ var util = {
           4:{"WORK":6,"CARRY":5,"MOVE":7},
           5:{"WORK":8,"CARRY":6,"MOVE":10},
           6:{"WORK":11,"CARRY":6,"MOVE":12},
-          7:{"WORK":13,"CARRY":6,"MOVE":14},
+          7:{"WORK":17,"CARRY":7,"MOVE":17},
+          8:{"WORK":22,"CARRY":7,"MOVE":21},
         },
         "transporter":{
           1:{"CARRY":3,"MOVE":3},
@@ -345,6 +350,8 @@ var util = {
           4:{"CARRY":12,"MOVE":12},
           5:{"CARRY":15,"MOVE":15},
           6:{"CARRY":20,"MOVE":15},
+          7:{"CARRY":25,"MOVE":19},
+          8:{"CARRY":30,"MOVE":20},
         },
         "mineralTransporter": {
             1: {"CARRY":3,  "MOVE":3},
@@ -353,51 +360,78 @@ var util = {
             4: {"CARRY":12, "MOVE":12},
             5: {"CARRY":15, "MOVE":15},
             6: {"CARRY":20, "MOVE":15},
+            7: {"CARRY":25, "MOVE":19},
+            8: {"CARRY":30, "MOVE":20},
         },
+        // Source-focused. WORK capped at 6 because a single source caps at 10 E/tick
+        // (5 WORK). Extra WORK past 6 is wasted on a source. Use mineralMiner for minerals.
         "miner":{
+          1:{"WORK":2,"CARRY":1,"MOVE":1},
+          2:{"WORK":4,"CARRY":2,"MOVE":1},
+          3:{"WORK":5,"CARRY":2,"MOVE":2},
+          4:{"WORK":6,"CARRY":3,"MOVE":3},
+          5:{"WORK":6,"CARRY":4,"MOVE":5},
+          6:{"WORK":6,"CARRY":5,"MOVE":6},
+          7:{"WORK":6,"CARRY":6,"MOVE":7},
+          8:{"WORK":6,"CARRY":8,"MOVE":8},
+        },
+        // Mineral-focused. Max WORK for extractor throughput.
+        "mineralMiner":{
           1:{"WORK":2,"CARRY":1,"MOVE":1},
           2:{"WORK":4,"CARRY":2,"MOVE":1},
           3:{"WORK":6,"CARRY":2,"MOVE":2},
           4:{"WORK":9,"CARRY":3,"MOVE":3},
           5:{"WORK":12,"CARRY":4,"MOVE":4},
-          6:{"WORK":15,"CARRY":5,"MOVE":5},
+          6:{"WORK":16,"CARRY":4,"MOVE":5},
+          7:{"WORK":25,"CARRY":4,"MOVE":6},
+          8:{"WORK":36,"CARRY":5,"MOVE":8},
         },
         "claimer":{
           1:{"CLAIM":1,"MOVE":2},
           2:{"CLAIM":2,"MOVE":3},
           3:{"CLAIM":3,"MOVE":4},
+          4:{"CLAIM":4,"MOVE":5},
+          5:{"CLAIM":5,"MOVE":6},
         },
         "attack":{
-          1:{"TOUGH":2,"MOVE":4,"ATTACK":1},
-          2:{"TOUGH":4,"MOVE":7,"ATTACK":2},
-          3:{"TOUGH":6,"MOVE":10,"ATTACK":3},
-          4:{"TOUGH":12,"MOVE":12,"ATTACK":4},
-          5:{"TOUGH":14,"MOVE":14,"ATTACK":5},
-          6:{"TOUGH":16,"MOVE":16,"ATTACK":6},
+          1:{"ATTACK":2,"MOVE":2},
+          2:{"TOUGH":2,"ATTACK":3,"MOVE":5},
+          3:{"TOUGH":4,"ATTACK":5,"MOVE":7},
+          4:{"TOUGH":6,"ATTACK":7,"MOVE":10},
+          5:{"TOUGH":8,"ATTACK":10,"MOVE":12},
+          6:{"TOUGH":10,"ATTACK":13,"MOVE":15},
+          7:{"TOUGH":12,"ATTACK":16,"MOVE":18},
+          8:{"TOUGH":10,"ATTACK":18,"MOVE":22},
         },
         "defender":{
-          1:{"TOUGH":2,"MOVE":4,"ATTACK":1},
-          2:{"TOUGH":4,"MOVE":7,"ATTACK":2},
-          3:{"TOUGH":6,"MOVE":10,"ATTACK":3},
-          4:{"TOUGH":12,"MOVE":12,"ATTACK":4},
-          5:{"TOUGH":14,"MOVE":14,"ATTACK":5},
-          6:{"TOUGH":16,"MOVE":16,"ATTACK":6},
+          1:{"ATTACK":2,"MOVE":2},
+          2:{"TOUGH":2,"ATTACK":3,"MOVE":5},
+          3:{"TOUGH":4,"ATTACK":5,"MOVE":7},
+          4:{"TOUGH":6,"ATTACK":7,"MOVE":10},
+          5:{"TOUGH":8,"ATTACK":10,"MOVE":12},
+          6:{"TOUGH":10,"ATTACK":13,"MOVE":15},
+          7:{"TOUGH":12,"ATTACK":16,"MOVE":18},
+          8:{"TOUGH":10,"ATTACK":18,"MOVE":22},
         },
         "healer":{
-          1:{"MOVE":1,"HEAL":1},
-          2:{"MOVE":1,"HEAL":2},
-          3:{"TOUGH":5,"MOVE":2,"HEAL":2},
-          4:{"TOUGH":5,"MOVE":3,"HEAL":3},
-          5:{"TOUGH":5,"MOVE":4,"HEAL":4},
-          6:{"TOUGH":5,"MOVE":5,"HEAL":5},
+          1:{"HEAL":1,"MOVE":1},
+          2:{"HEAL":2,"MOVE":1},
+          3:{"TOUGH":1,"HEAL":2,"MOVE":3},
+          4:{"HEAL":4,"MOVE":4},
+          5:{"HEAL":6,"MOVE":6},
+          6:{"TOUGH":5,"HEAL":7,"MOVE":7},
+          7:{"TOUGH":5,"HEAL":14,"MOVE":14},
+          8:{"TOUGH":10,"HEAL":20,"MOVE":20},
         },
         "ranged":{
-          1:{"TOUGH":2,"MOVE":4,"RANGED_ATTACK":1},
-          2:{"TOUGH":4,"MOVE":7,"RANGED_ATTACK":2},
-          3:{"TOUGH":6,"MOVE":10,"RANGED_ATTACK":3},
-          4:{"TOUGH":12,"MOVE":12,"RANGED_ATTACK":4},
-          5:{"TOUGH":14,"MOVE":14,"RANGED_ATTACK":5},
-          6:{"TOUGH":16,"MOVE":16,"RANGED_ATTACK":6},
+          1:{"RANGED_ATTACK":1,"MOVE":3},
+          2:{"TOUGH":1,"RANGED_ATTACK":2,"MOVE":4},
+          3:{"TOUGH":4,"RANGED_ATTACK":3,"MOVE":5},
+          4:{"TOUGH":5,"RANGED_ATTACK":5,"MOVE":7},
+          5:{"TOUGH":5,"RANGED_ATTACK":7,"MOVE":10},
+          6:{"TOUGH":8,"RANGED_ATTACK":9,"MOVE":13},
+          7:{"TOUGH":10,"RANGED_ATTACK":13,"MOVE":18},
+          8:{"TOUGH":11,"RANGED_ATTACK":17,"MOVE":22},
         },
       }
 

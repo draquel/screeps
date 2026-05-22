@@ -38,6 +38,9 @@ module.exports = {
       case "miner":
         res = this.initMiner(room, memory);
         break;
+      case "mineralMiner":
+        res = this.initMineralMiner(room, memory);
+        break;
       default:
         res = memory;
         break;
@@ -102,6 +105,21 @@ module.exports = {
     return memory;
   },
 
+  initMineralMiner(room, memory) {
+    if (memory.target != null && Game.getObjectById(memory.target) != null) {
+      return memory;
+    }
+    let mineral = room.find(FIND_MINERALS).shift();
+    if (!mineral) return memory;
+    if (memory.resourceTarget === undefined) {
+      memory.resourceTarget = mineral.mineralType;
+    }
+    if (mineral.mineralType === memory.resourceTarget) {
+      memory.target = mineral.id;
+    }
+    return memory;
+  },
+
   initWorker(memory) {
     if (memory.target != null && Game.getObjectById(memory.target) != null) {
       return memory;
@@ -138,6 +156,9 @@ module.exports = {
       case "miner":
         this.runMiner(creep);
         break;
+      case "mineralMiner":
+        this.runMiner(creep);
+        break;
 
       case "transporter":
         this.runTransporter(creep);
@@ -154,8 +175,8 @@ module.exports = {
       case "attack":
         this.runAttack(creep);
         break;
-      case "defend":
-        this.runDefend(creep);
+      case "defender":
+        this.runDefender(creep);
         break;
       case "claimer":
         this.runClaimer(creep);
@@ -288,30 +309,35 @@ module.exports = {
         this.moveToHome(creep);
         return;
       }
-      if (
-        !work.depositResources(
-          creep,
-          {
+      let depositGroupA = {
             factory: true,
             terminal: true,
             links: false,
             storages: false,
             containers: false,
-          },
-          resource,
-        )
-      ) {
-        work.depositResources(
-          creep,
-          {
+      };
+      let depositGroupB = {
             terminal: false,
             links: true,
             labs: false,
             storages: true,
             containers: false,
-          },
-          resource,
-        );
+      };
+
+      if (work.depositResources(creep, depositGroupA, resource)) {
+        return;
+      }
+      if(work.depositResources(creep, depositGroupB, resource)){
+        return;
+      }
+      if (work.maintainBaseStructures(creep)) {
+        return;
+      }  
+      if (work.buildConstructionSites(creep)) {
+        return;
+      }
+      if(creep.store.getFreeCapacity(resource) > creep.store.getCapacity()*0.9){
+        creep.memory.working  = true;
       }
     }
   },
@@ -336,6 +362,7 @@ module.exports = {
           {
             factory: true,
             terminal: true,
+            labs:true,
             links: false,
             storages: false,
             containers: false,
@@ -349,6 +376,7 @@ module.exports = {
             terminal: false,
             links: false,
             labs: false,
+            factory: false,
             storages: true,
             containers: false,
           },
@@ -1092,7 +1120,7 @@ getLabFillTarget(creep) {
     }
   },
 
-  runDefend(creep) {
+  runDefender(creep) {
     if (creep.memory.fighting && creep.memory.target === null) {
       creep.memory.fighting = false;
       creep.say("🚚 Defend");
