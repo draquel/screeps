@@ -3,6 +3,7 @@
 const proto = require('./screeps.prototype')
 const rooms = require('./rooms');
 const creeps = require('./creeps');
+const traffic = require('./traffic');
 
 module.exports.loop = function () {
     Game.util = require('./util');
@@ -11,6 +12,7 @@ module.exports.loop = function () {
 
   //Apply prototypes
     proto.load();
+    traffic.install();
 
     //Cleanup Memory
     Game.util.cleanupMemory();
@@ -24,4 +26,7 @@ module.exports.loop = function () {
     for(let name in Game.creeps) {
         creeps.run(Game.creeps[name]);
     }
+
+    //Resolve queued movement intents (shoves, etc.)
+    traffic.resolve();
 }

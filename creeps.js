@@ -637,6 +637,14 @@ module.exports = {
       target = Game.getObjectById(creep.memory.target);
     }
 
+    // Stationary work tile: opt out of being shoved by the traffic manager once
+    // we're within harvest range, and re-enable shoving while we're still en route.
+    if (target != null && creep.pos.inRangeTo(target.pos, 1)) {
+      creep.memory.noShove = true;
+    } else if (creep.memory.noShove) {
+      delete creep.memory.noShove;
+    }
+
     if (creep.memory.working && target != null) {
       work.workerHarvest(creep, target);
     } else {
@@ -1220,33 +1228,52 @@ getLabFillTarget(creep) {
   },
 
   moveToRoom(creep, room = creep.memory.targetRoom) {
-    if (
-      creep.memory.currentRoom !== creep.room.name &&
-      (creep.pos.x * creep.pos.y === 0 ||
-        creep.pos.x === 49 ||
-        creep.pos.y === 49)
-    ) {
-      creep.moveTo(new RoomPosition(25, 25, creep.room.name));
-      creep.memory.currentRoom = creep.room.name;
+    // Just-crossed nudge: step inward exactly once when we enter a new room while
+    // still standing on the border tile. Triggered by room transition, not by edge
+    // position alone, so it cannot flap on subsequent ticks.
+    if (creep.memory.previousRoom !== creep.room.name) {
+      creep.memory.previousRoom = creep.room.name;
+      if (creep.pos.x === 0)  { creep.move(RIGHT);  return false; }
+      if (creep.pos.x === 49) { creep.move(LEFT);   return false; }
+      if (creep.pos.y === 0)  { creep.move(BOTTOM); return false; }
+      if (creep.pos.y === 49) { creep.move(TOP);    return false; }
     }
-    if (!this.inTargetRoom(creep, room)) {
-      util.moveToTarget(
-        creep,
-        {
-          showPath: creep.room.memory.showPath,
-          pathColor: "#0c02d1",
-          reusePath: 10,
-        },
-        creep.pos.findClosestByPath(creep.room.findExitTo(room), {
-          algorithm: "astar",
-        }),
-      );
-      //console.log('moveToRoom: Moving To Room '+creep.memory.targetRoom)
-      return false;
-    } else {
-      //console.log('moveToRoom: Found Room '+creep.memory.targetRoom)
+
+    if (this.inTargetRoom(creep, room)) {
       return true;
     }
+
+    // Cache the chosen exit tile per (currentRoom -> targetRoom) so we don't run
+    // findClosestByPath(findExitTo(...)) every tick. Cache key encodes both ends,
+    // so it self-invalidates on room change or new destination.
+    let cacheKey = creep.room.name + ">" + room;
+    let cached = creep.memory._exitCache;
+    let exitPos;
+    if (cached && cached.key === cacheKey) {
+      exitPos = new RoomPosition(cached.x, cached.y, cached.roomName);
+    } else {
+      let dir = creep.room.findExitTo(room);
+      if (dir === ERR_NO_PATH || dir === ERR_INVALID_ARGS) {
+        return false;
+      }
+      let exit = creep.pos.findClosestByPath(dir, { algorithm: "astar" });
+      if (!exit) {
+        return false;
+      }
+      exitPos = exit;
+      creep.memory._exitCache = { key: cacheKey, x: exit.x, y: exit.y, roomName: exit.roomName };
+    }
+
+    util.moveToTarget(
+      creep,
+      {
+        showPath: creep.room.memory.showPath,
+        pathColor: "#0c02d1",
+        reusePath: 10,
+      },
+      exitPos,
+    );
+    return false;
   },
 
   getTargetResource(creep) {

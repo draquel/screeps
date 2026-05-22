@@ -3,6 +3,24 @@
 
 var util = {
 
+    // Per-role reusePath defaults. Long-stable hauls cache the path for many ticks;
+    // combat roles recompute every tick so they react to a moving battlefield.
+    // Used by moveToTarget when the caller does not pass an explicit reusePath.
+    REUSE_PATH_BY_ROLE: {
+        transporter: 20,
+        mineralTransporter: 20,
+        miner: 20,
+        mineralMiner: 20,
+        harvester: 10,
+        scout: 15,
+        claimer: 15,
+        worker: 5,
+        attack: 0,
+        defender: 0,
+        ranged: 0,
+        healer: 0,
+    },
+
     cleanupMemory: function(){
         if(!Memory.creeps && !Memory.rooms){ return; }
 
@@ -67,22 +85,52 @@ var util = {
 
     },
 
-    moveToTarget(creep, options = { showPath:creep.room.memory.showPath, pathColor: "#ffffff", reusePath:creep.room.memory.reusePath }, target = creep.memory.target){
-        let moveOptions = {reusePath: options.reusePath }
-        if(options.showPath) {
+    moveToTarget(creep, options = {}, target = creep.memory.target){
+        // Stuck detection: if the creep didn't move last tick despite being able to,
+        // repath this tick avoiding actual creeps. Default behavior is ignoreCreeps:true
+        // so that cached paths don't detour around blockers that have since walked away.
+        let pos = creep.pos;
+        let last = creep.memory.lastPos;
+        let stuck = creep.memory.stuckTicks || 0;
+        if(creep.fatigue === 0){
+            if(last && last.x === pos.x && last.y === pos.y && last.roomName === pos.roomName){
+                stuck += 1;
+            }else{
+                stuck = 0;
+            }
+        }
+        creep.memory.lastPos = { x: pos.x, y: pos.y, roomName: pos.roomName };
+        creep.memory.stuckTicks = stuck;
+
+        let showPath = options.showPath !== undefined ? options.showPath : creep.room.memory.showPath;
+        let pathColor = options.pathColor || "#ffffff";
+        let reusePath = options.reusePath;
+        if(reusePath === undefined){
+            let roleVal = this.REUSE_PATH_BY_ROLE[creep.memory.role];
+            reusePath = roleVal !== undefined ? roleVal : creep.room.memory.reusePath;
+        }
+        let ignoreCreeps = options.ignoreCreeps !== undefined ? options.ignoreCreeps : true;
+
+        if(stuck >= 2){
+            // Blocker is real (or terrain). Force a fresh path that actually avoids creeps.
+            ignoreCreeps = false;
+            reusePath = 0;
+        }
+
+        let moveOptions = { reusePath: reusePath, ignoreCreeps: ignoreCreeps };
+        if(showPath) {
             moveOptions.visualizePathStyle = {
                 fill: 'transparent',
-                stroke: options.pathColor,
+                stroke: pathColor,
                 lineStyle: 'dashed',
                 strokeWidth: .15,
                 opacity: .1
             }
         }
-        
+
         let result
 
-        if(target instanceof Object && !(target instanceof RoomPosition) && target.x && target.y){
-          //console.log(creep.name+"'s target is an Object with x&y")
+        if(target instanceof Object && !(target instanceof RoomPosition) && target.x !== undefined && target.y !== undefined){
           result = creep.moveTo(target.x,target.y,moveOptions);
         }else{
           result = creep.moveTo(target,moveOptions);
