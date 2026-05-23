@@ -372,7 +372,10 @@ The pipeline is three layers, each in its own file:
 
 Vendored from [bonzaiferroni/Traveler](https://github.com/bonzaiferroni/Traveler). Computes multi-room `PathFinder` paths gated by `Game.map.findRoute`, serializes them onto `creep.memory._trav`, and owns stuck detection.
 
-**Local patch**: a `visualize` option gates the three visualization sites in `travelTo` (fatigue circle, stuck circle, path draw) and the start-circle/line draws in `serializePath`. If the vendored copy is ever refreshed from upstream, re-apply the patch or `room.memory.showPath` will stop being honored.
+**Local patches** (re-apply if the vendored copy is refreshed from upstream):
+
+1. A `visualize` option gates the three visualization sites in `travelTo` (fatigue circle, stuck circle, path draw) and the start-circle/line draws in `serializePath`. Without it, `room.memory.showPath` is ignored.
+2. After `travelData.path = travelData.path.substr(1)` in `travelTo`, return `OK` when the path is now empty. Upstream falls through to `parseInt("")` → `NaN` → `creep.move(NaN)` → `ERR_INVALID_ARGS` on the final tick of every journey, which spams "moveToTarget: Invalid Arguments".
 
 ### `intel.js` — room observation and route filtering
 

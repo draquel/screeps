@@ -117,6 +117,10 @@ class Traveler {
         if (state.stuckCount === 0 && !newPath) {
             travelData.path = travelData.path.substr(1);
         }
+        // path may have been exhausted by the consumption above; treat as arrived
+        if (travelData.path.length === 0) {
+            return OK;
+        }
         let nextDirection = parseInt(travelData.path[0], 10);
         if (options.returnData) {
             if (nextDirection) {
