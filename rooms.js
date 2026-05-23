@@ -147,9 +147,17 @@ module.exports = {
         }
     }
 
-      let ownedRooms = Object.keys(Memory.rooms);
-      for (let i = 0; i < ownedRooms.length; i++) {
-          let targetName = ownedRooms[i];
+      // Filter to rooms I actually control. Object.keys(Memory.rooms) also
+      // contains entries for rooms I've merely visited (initMem fires whenever
+      // rooms.run is called for a visible room), including foreign-owned rooms
+      // that happen to have a terminal — sending to those returns ERR_NOT_OWNER
+      // and burns log noise.
+      let myRooms = Object.keys(Memory.rooms).filter(n => {
+          let gr = Game.rooms[n];
+          return gr && gr.controller && gr.controller.my;
+      });
+      for (let i = 0; i < myRooms.length; i++) {
+          let targetName = myRooms[i];
           if (targetName === room.name) continue;
 
           let targetMem = Memory.rooms[targetName];
