@@ -21,16 +21,24 @@ var util = {
 
         let sourceIds = []
         let terminalIds = []
-        //Rooms
-        if(Memory.rooms && Object.keys(Memory.rooms).length > Object.keys(Game.rooms).length){
+        //Rooms — drop entries with no vision OR with vision but not mine.
+        //The previous gating (Memory.rooms count > Game.rooms count) could hide
+        //the sweep when counts happened to balance, leaving foreign residue forever.
+        if(Memory.rooms){
             for(let name in Memory.rooms) {
-                if (!Game.rooms[name]) {
-                    console.log('['+name+'] Memory: Delete Room Memory');
+                let gr = Game.rooms[name];
+                if (!gr) {
+                    console.log('['+name+'] Memory: Delete Room Memory (no vision)');
                     delete Memory.rooms[name];
-                }else{
-                    Game.rooms[name].sources.forEach((s) => { sourceIds.push(s.id) })
-                    if(Game.rooms[name].terminal){ terminalIds.push(Game.rooms[name].terminal.id) }
+                    continue;
                 }
+                if (!gr.controller || !gr.controller.my) {
+                    console.log('['+name+'] Memory: Delete Foreign Room Memory');
+                    delete Memory.rooms[name];
+                    continue;
+                }
+                gr.sources.forEach((s) => { sourceIds.push(s.id) })
+                if (gr.terminal) { terminalIds.push(gr.terminal.id) }
             }
             //Sources
             for(let id in Memory.sources){

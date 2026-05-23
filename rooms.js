@@ -35,6 +35,13 @@ module.exports = {
     },
 
     run(room){
+        // Skip rooms I don't control. main.js iterates Game.rooms which includes
+        // any room I currently have vision in (transit, remote, foreign). None of
+        // the per-tick room logic below operates on structures I don't own, and
+        // running initMem here is what historically polluted Memory.rooms with
+        // foreign terminalId/storageId entries.
+        if(!room.controller || !room.controller.my) return;
+
         this.initMem(room)
 
         var interval = Game.time % 100 === 0
