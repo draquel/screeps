@@ -175,6 +175,9 @@ module.exports = {
       case "attack":
         this.runAttack(creep);
         break;
+      case "ranged":
+        this.runRanged(creep);
+        break;
       case "defender":
         this.runDefender(creep);
         break;
@@ -1207,6 +1210,40 @@ getLabFillTarget(creep) {
           }
         }
         */
+      }
+    }
+  },
+
+  runRanged(creep) {
+    if (creep.memory.fighting && creep.memory.target === null) {
+      creep.memory.fighting = false;
+    }
+    if (!creep.memory.fighting && creep.memory.target !== null) {
+      creep.memory.fighting = true;
+      creep.say("🏹 Engage");
+    }
+
+    if (creep.memory.targetRoom != null && !this.inTargetRoom(creep)) {
+      this.moveToRoom(creep);
+      return;
+    } else if (creep.memory.targetRoom == null && !this.inHomeRoom(creep)) {
+      this.moveToHome(creep);
+      return;
+    }
+
+    if (creep.memory.fighting) {
+      let targetObj = Game.getObjectById(creep.memory.target);
+      if (targetObj != null) {
+        combat.combatRanged(creep, targetObj);
+      } else {
+        creep.memory.target = null;
+      }
+    } else {
+      let target = combat.getAttackTarget(creep);
+      if (target != null) {
+        creep.memory.target = target.id;
+      } else {
+        util.patrol(creep);
       }
     }
   },

@@ -47,21 +47,45 @@ module.exports = {
   },
 
   combatRanged(creep, target) {
-    let result = creep.ranged_attack(target);
-    if (result === ERR_NOT_IN_RANGE) {
-      util.moveToTarget(
-        creep,
-        { showPath: creep.room.memory.showPath, pathColor: "#0000ff" },
-        target,
-      );
-    } else if (result === ERR_INVALID_TARGET) {
+    // Attack decision: mass attack when its damage exceeds a single 10-dmg shot.
+    // rangedMassAttack does 10/4/1 to every hostile at range 1/2/3.
+    //   2 enemies at r1 → 20 dmg (vs 10 single). Worth it.
+    //   3 enemies at r2 → 12 dmg (vs 10 single). Worth it.
+    const inRange = creep.pos.findInRange(FIND_HOSTILE_CREEPS, 3);
+    const r1 = inRange.filter((c) => creep.pos.getRangeTo(c) <= 1);
+    const r2 = inRange.filter((c) => creep.pos.getRangeTo(c) <= 2);
+    const useMass = r1.length >= 2 || r2.length >= 3;
+
+    let result;
+    if (useMass) {
+      result = creep.rangedMassAttack();
+    } else if (target && creep.pos.inRangeTo(target, 3)) {
+      result = creep.rangedAttack(target);
+    }
+    if (result === ERR_INVALID_TARGET) {
       creep.memory.target = null;
     } else if (result === ERR_NO_BODYPART) {
       console.log(
-        "combatRanged: Creep " + creep.name + " does not have RANGED part",
+        "combatRanged: Creep " + creep.name + " does not have RANGED_ATTACK part",
       );
     } else if (result === ERR_INVALID_ARGS) {
       console.log("combatRanged: Invalid Arguments");
+    }
+
+    // Positioning: kite away from melee threats at range ≤ 2 so they can't
+    // close to range 1 next tick. Otherwise approach the target to range 3.
+    const meleeThreat = inRange
+      .filter((c) => c.body.some((p) => p.type === ATTACK))
+      .sort((a, b) => creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b))[0];
+    if (meleeThreat && creep.pos.getRangeTo(meleeThreat) <= 2) {
+      const fleeDir = meleeThreat.pos.getDirectionTo(creep.pos);
+      creep.move(fleeDir);
+    } else if (target && !creep.pos.inRangeTo(target, 3)) {
+      util.moveToTarget(
+        creep,
+        { showPath: creep.room.memory.showPath, pathColor: "#0000ff", range: 3 },
+        target,
+      );
     }
     return result;
   },
