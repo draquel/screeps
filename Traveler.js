@@ -20,7 +20,7 @@ class Traveler {
             return ERR_INVALID_ARGS;
         }
         if (creep.fatigue > 0) {
-            Traveler.circle(creep.pos, "aqua", .3);
+            if (options.visualize !== false) Traveler.circle(creep.pos, "aqua", .3);
             return ERR_TIRED;
         }
         destination = this.normalizePos(destination);
@@ -52,7 +52,7 @@ class Traveler {
         // check if creep is stuck
         if (this.isStuck(creep, state)) {
             state.stuckCount++;
-            Traveler.circle(creep.pos, "magenta", state.stuckCount * .2);
+            if (options.visualize !== false) Traveler.circle(creep.pos, "magenta", state.stuckCount * .2);
         }
         else {
             state.stuckCount = 0;
@@ -106,7 +106,7 @@ class Traveler {
             if (options.returnData) {
                 options.returnData.pathfinderReturn = ret;
             }
-            travelData.path = Traveler.serializePath(creep.pos, ret.path, color);
+            travelData.path = Traveler.serializePath(creep.pos, ret.path, color, options.visualize !== false);
             state.stuckCount = 0;
         }
         this.serializeState(creep, destination, state, travelData);
@@ -472,14 +472,16 @@ class Traveler {
      * @param color
      * @returns {string}
      */
-    static serializePath(startPos, path, color = "orange") {
+    static serializePath(startPos, path, color = "orange", draw = true) {
         let serializedPath = "";
         let lastPosition = startPos;
-        this.circle(startPos, color);
+        if (draw) this.circle(startPos, color);
         for (let position of path) {
             if (position.roomName === lastPosition.roomName) {
-                new RoomVisual(position.roomName)
-                    .line(position, lastPosition, { color: color, lineStyle: "dashed" });
+                if (draw) {
+                    new RoomVisual(position.roomName)
+                        .line(position, lastPosition, { color: color, lineStyle: "dashed" });
+                }
                 serializedPath += lastPosition.getDirectionTo(position);
             }
             lastPosition = position;

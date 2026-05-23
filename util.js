@@ -95,19 +95,12 @@ var util = {
             useFindRoute: true,
             ignoreCreeps: options.ignoreCreeps !== undefined ? options.ignoreCreeps : true,
             repath: options.repath !== undefined ? options.repath : (this.REPATH_BY_ROLE[creep.memory.role] || 0),
+            visualize: !!showPath,
         };
         if(options.range !== undefined) travelOpts.range = options.range;
         if(options.stuckValue !== undefined) travelOpts.stuckValue = options.stuckValue;
         if(options.maxOps !== undefined) travelOpts.maxOps = options.maxOps;
         if(options.allowHostile) travelOpts.allowHostile = true;
-        if(showPath){
-            travelOpts.visualizePathStyle = {
-                stroke: options.pathColor || "#ffffff",
-                lineStyle: 'dashed',
-                strokeWidth: .15,
-                opacity: .1,
-            };
-        }
 
         let result = Traveler.travelTo(creep, target, travelOpts);
         if(result === ERR_INVALID_ARGS){
