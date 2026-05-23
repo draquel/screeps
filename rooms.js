@@ -657,16 +657,29 @@ module.exports = {
     },
 
     updateSpawning(room){
-        if(room.memory.spawning.length === 0){ return; }
+        if(!room.memory.spawning || room.memory.spawning.length === 0){ return; }
 
-        let creeps = room.find(FIND_MY_CREEPS);
-        for(let i = 0; i < creeps.length; i++){
-            for(let j = 0; j < room.memory.spawning.length; j++){
-                if(creeps[i].name === room.memory.spawning[j].name || room.memory.spawning[j].name === undefined){
-                    room.memory.spawning.splice(j,1);
-                }
-            }
+        // Names actively being produced by a spawn structure this tick. We need
+        // this because the entry is committed before Game.creeps[name] appears,
+        // and we don't want to drop the placeholder mid-spawn.
+        const activeSpawnNames = new Set();
+        for(const s of room.find(FIND_MY_SPAWNS)){
+            if(s.spawning){ activeSpawnNames.add(s.spawning.name); }
         }
+
+        // Filter (not splice-in-loop, which used to skip duplicates and was the
+        // source of stale entries blocking unstuckSpawnQueue):
+        //   * malformed/legacy entries (no name) → drop
+        //   * creep alive in Game.creeps → drop (placeholder no longer needed;
+        //     the creep itself is counted via FIND_MY_CREEPS in getCreepsByRole)
+        //   * mid-spawn (active spawn producing it) → keep
+        //   * otherwise → drop (spawn never started or was cancelled)
+        room.memory.spawning = room.memory.spawning.filter(entry => {
+            if(!entry || !entry.name) return false;
+            if(Game.creeps[entry.name]) return false;
+            if(activeSpawnNames.has(entry.name)) return true;
+            return false;
+        });
     },
 
     processSpawnQueue(room){

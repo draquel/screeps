@@ -342,8 +342,19 @@ var util = {
             generated = prefixes[Math.floor(Math.random()*prefixes.length)] + suffixes[Math.floor(Math.random()*suffixes.length)];
         }
 
-        let existing = Object.keys(Game.creeps);
-        if(existing.includes(generated)){
+        // Reject any name already alive OR already committed in a spawn queue
+        // or spawning placeholder anywhere. Checking only Game.creeps allowed
+        // duplicates: a respawn-on-death entry sits in the queue under a name
+        // that's no longer in Game.creeps, and a fresh queCreep could pick the
+        // same name, producing two entries that both successfully spawn (and
+        // landed as duplicates in room.memory.spawning).
+        let taken = new Set(Object.keys(Game.creeps));
+        for(const name in Memory.rooms){
+            const m = Memory.rooms[name];
+            if(m.spawning)   for(const e of m.spawning)   if(e && e.name) taken.add(e.name);
+            if(m.spawnQueue) for(const e of m.spawnQueue) if(e && e.name) taken.add(e.name);
+        }
+        if(taken.has(generated)){
             generated = this.nameGenerator();
         }
 
