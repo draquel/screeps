@@ -240,8 +240,11 @@ var util = {
         }
         
         let creeps = room.find(FIND_MY_CREEPS,{filter: (c) => c.memory.role === role});
-        let spawning = room.memory.spawning.filter((c) => c.memory.role === role);
-        let queued = room.memory.spawnQueue.filter((c) => c.memory.role === role);
+        // spawning/spawnQueue are only initialized by rooms.run -> initMem on
+        // owned rooms. Default to empty arrays so callers querying a non-owned
+        // room (e.g. an attack creep in a foreign target room) don't crash.
+        let spawning = (room.memory.spawning || []).filter((c) => c.memory.role === role);
+        let queued = (room.memory.spawnQueue || []).filter((c) => c.memory.role === role);
 
         return [...creeps,...spawning,...queued];
     },
