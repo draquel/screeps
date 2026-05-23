@@ -372,7 +372,11 @@ class Traveler {
             },
         });
         if (!_.isArray(ret)) {
-            console.log(`couldn't findRoute to ${destination}`);
+            // Upstream logs every route-lookup failure. Noisy in steady state
+            // (one line per tick per affected creep when a transit room is
+            // flagged hostile and no alternative exists). Silence — failure
+            // already falls through to unconstrained PathFinder downstream.
+            // console.log(`couldn't findRoute to ${destination}`);
             return;
         }
         for (let value of ret) {

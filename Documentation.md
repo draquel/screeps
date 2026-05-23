@@ -397,6 +397,7 @@ Vendored from [bonzaiferroni/Traveler](https://github.com/bonzaiferroni/Traveler
 
 1. A `visualize` option gates the three visualization sites in `travelTo` (fatigue circle, stuck circle, path draw) and the start-circle/line draws in `serializePath`. Without it, `room.memory.showPath` is ignored.
 2. After `travelData.path = travelData.path.substr(1)` in `travelTo`, return `OK` when the path is now empty. Upstream falls through to `parseInt("")` → `NaN` → `creep.move(NaN)` → `ERR_INVALID_ARGS` on the final tick of every journey, which spams "moveToTarget: Invalid Arguments".
+3. In `findRoute`, the `couldn't findRoute to ${destination}` log line is commented out. Upstream fires it every tick a creep tries to (re)build a path that has no room-level route — usually because `intel.routeCallback` is returning `Infinity` for a critical transit room. The failure already falls through to unconstrained `PathFinder.search` downstream, so silence is harmless. Diagnose route blockages via `Game.cmd.listFlagged()` instead.
 
 ### `intel.js` — room observation and route filtering
 
