@@ -55,19 +55,24 @@ var util = {
                 gr.sources.forEach((s) => { sourceIds.push(s.id) })
                 if (gr.terminal) { terminalIds.push(gr.terminal.id) }
             }
-            //Sources
-            for(let id in Memory.sources){
-                if(!sourceIds.includes(id)){
-                    console.log('=>   Source Memory: ', id);
-                    delete Memory.sources[id]
+            //Sources + Terminals — throttled to every 100 ticks. Source memory
+            //(openSpaces cache) is stable terrain data and orphan entries only
+            //appear when a room flips ownership, so an every-tick sweep is
+            //wasted CPU. Offset from the mining-crew check (Game.time % 100 === 0)
+            //so we don't stack two O(N) passes on the same tick.
+            if(Game.time % 100 === 50){
+                for(let id in Memory.sources){
+                    if(!sourceIds.includes(id)){
+                        console.log('=>   Source Memory: ', id);
+                        delete Memory.sources[id]
+                    }
                 }
-            }
-            //Terminals
-            for(let id in Memory.terminals){
-              if(!terminalIds.includes(id)){
-                console.log('=>   Terminal Memory: ', id);
-                delete Memory.terminals[id]
-              }
+                for(let id in Memory.terminals){
+                  if(!terminalIds.includes(id)){
+                    console.log('=>   Terminal Memory: ', id);
+                    delete Memory.terminals[id]
+                  }
+                }
             }
         }
 
