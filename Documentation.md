@@ -89,6 +89,27 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | `sellResources(room, resource, amount)` | Sell from terminal; defaults to the room's native mineral if `resource` is null |
 | `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
 
+**Intel (`Memory.intel.rooms`):**
+
+| Function | Description |
+|----------|-------------|
+| `avoidRoom(name)` | Set `avoid: true` — permanent block (never auto-cleared by `intel.update`) |
+| `unavoidRoom(name)` | Clear the `avoid` flag |
+| `markHostile(name)` | Set `hostile: true, hostileSeen: Game.time`. Will age out after `Memory.intel.hostileTTL` ticks. Only meaningful for rooms you don't have vision in — otherwise `intel.update` recomputes it next tick |
+| `setRoomOwner(name, owner)` | Set the `owner` field manually (overwritten by `intel.update` if you have vision) |
+| `clearRoom(name)` | Delete the entry entirely |
+| `intel(name)` | Log and return the current entry |
+| `listFlagged()` | List every room with `avoid` or `hostile` set |
+
+Example:
+
+```js
+Game.cmd.avoidRoom('E18S60')                   // permanent block of a corridor
+Game.cmd.markHostile('E17S60')                 // temporary block (TTL applies)
+Game.cmd.setRoomOwner('E17S60', 'RivalName')   // record a controller owner you saw
+Game.cmd.listFlagged()                         // audit everything you've flagged
+```
+
 **Console Examples:**
 
 ```js
