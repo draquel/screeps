@@ -25,6 +25,7 @@ var util = {
         //The previous gating (Memory.rooms count > Game.rooms count) could hide
         //the sweep when counts happened to balance, leaving foreign residue forever.
         if(Memory.rooms){
+            let me = (Memory.intel && Memory.intel.username) || null;
             for(let name in Memory.rooms) {
                 let gr = Game.rooms[name];
                 if (!gr) {
@@ -32,7 +33,10 @@ var util = {
                     delete Memory.rooms[name];
                     continue;
                 }
-                if (!gr.controller || !gr.controller.my) {
+                let isMine = gr.controller && gr.controller.my;
+                let isReservedByMe = gr.controller && gr.controller.reservation
+                    && gr.controller.reservation.username === me;
+                if (!isMine && !isReservedByMe) {
                     // The Screeps engine auto-creates Memory.rooms[name] = {} on
                     // any room.memory.X read, so creeps passing through a foreign
                     // room recreate an empty shell every tick. Only sweep entries
@@ -45,6 +49,9 @@ var util = {
                     }
                     continue;
                 }
+                // Reserved-by-me rooms keep their memory so the Room.prototype
+                // sources/mineral caches (lazy-written on remote-miner access)
+                // don't churn against the sweeper every tick.
                 gr.sources.forEach((s) => { sourceIds.push(s.id) })
                 if (gr.terminal) { terminalIds.push(gr.terminal.id) }
             }
