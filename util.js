@@ -33,8 +33,16 @@ var util = {
                     continue;
                 }
                 if (!gr.controller || !gr.controller.my) {
-                    console.log('['+name+'] Memory: Delete Foreign Room Memory');
-                    delete Memory.rooms[name];
+                    // The Screeps engine auto-creates Memory.rooms[name] = {} on
+                    // any room.memory.X read, so creeps passing through a foreign
+                    // room recreate an empty shell every tick. Only sweep entries
+                    // that actually have content (legacy residue from before
+                    // rooms.run was gated); leave empty shells alone to avoid an
+                    // infinite create/delete churn.
+                    if (Object.keys(Memory.rooms[name]).length > 0) {
+                        console.log('['+name+'] Memory: Delete Foreign Room Memory');
+                        delete Memory.rooms[name];
+                    }
                     continue;
                 }
                 gr.sources.forEach((s) => { sourceIds.push(s.id) })
