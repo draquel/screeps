@@ -4,6 +4,7 @@ const proto = require('./screeps.prototype')
 const rooms = require('./rooms');
 const creeps = require('./creeps');
 const traffic = require('./traffic');
+const intel = require('./intel');
 
 module.exports.loop = function () {
     Game.util = require('./util');
@@ -16,6 +17,10 @@ module.exports.loop = function () {
 
     //Cleanup Memory
     Game.util.cleanupMemory();
+    if(Game.time % 1000 === 0){ intel.cleanup(); }
+
+    //Update room intelligence (for Traveler routeCallback)
+    intel.update();
 
     //Run Room Ops
     for(let name in Game.rooms){

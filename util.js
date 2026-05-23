@@ -1,24 +1,19 @@
 /* eslint-disable no-undef */
 // noinspection JSUnresolvedReference
 
+const Traveler = require('./Traveler').Traveler;
+const intel = require('./intel');
+
 var util = {
 
-    // Per-role reusePath defaults. Long-stable hauls cache the path for many ticks;
-    // combat roles recompute every tick so they react to a moving battlefield.
-    // Used by moveToTarget when the caller does not pass an explicit reusePath.
-    REUSE_PATH_BY_ROLE: {
-        transporter: 20,
-        mineralTransporter: 20,
-        miner: 20,
-        mineralMiner: 20,
-        harvester: 10,
-        scout: 15,
-        claimer: 15,
-        worker: 5,
-        attack: 0,
-        defender: 0,
-        ranged: 0,
-        healer: 0,
+    // Per-role repath probability for Traveler. Combat roles repath every tick
+    // (probability 1) so they react to a moving battlefield. Everyone else holds
+    // their cached path until it is invalidated or they get stuck.
+    REPATH_BY_ROLE: {
+        attack: 1,
+        defender: 1,
+        ranged: 1,
+        healer: 1,
     },
 
     cleanupMemory: function(){
@@ -86,59 +81,37 @@ var util = {
     },
 
     moveToTarget(creep, options = {}, target = creep.memory.target){
-        // Stuck detection: if the creep didn't move last tick despite being able to,
-        // repath this tick avoiding actual creeps. Default behavior is ignoreCreeps:true
-        // so that cached paths don't detour around blockers that have since walked away.
-        let pos = creep.pos;
-        let last = creep.memory.lastPos;
-        let stuck = creep.memory.stuckTicks || 0;
-        if(creep.fatigue === 0){
-            if(last && last.x === pos.x && last.y === pos.y && last.roomName === pos.roomName){
-                stuck += 1;
-            }else{
-                stuck = 0;
-            }
+        if(target == null){ return ERR_INVALID_TARGET; }
+
+        // Normalize {x,y,roomName?} into a RoomPosition so Traveler can consume it.
+        if(target instanceof Object && !(target instanceof RoomPosition) && target.x !== undefined && target.y !== undefined){
+            target = new RoomPosition(target.x, target.y, target.roomName || creep.room.name);
         }
-        creep.memory.lastPos = { x: pos.x, y: pos.y, roomName: pos.roomName };
-        creep.memory.stuckTicks = stuck;
 
         let showPath = options.showPath !== undefined ? options.showPath : creep.room.memory.showPath;
-        let pathColor = options.pathColor || "#ffffff";
-        let reusePath = options.reusePath;
-        if(reusePath === undefined){
-            let roleVal = this.REUSE_PATH_BY_ROLE[creep.memory.role];
-            reusePath = roleVal !== undefined ? roleVal : creep.room.memory.reusePath;
-        }
-        let ignoreCreeps = options.ignoreCreeps !== undefined ? options.ignoreCreeps : true;
 
-        if(stuck >= 2){
-            // Blocker is real (or terrain). Force a fresh path that actually avoids creeps.
-            ignoreCreeps = false;
-            reusePath = 0;
-        }
-
-        let moveOptions = { reusePath: reusePath, ignoreCreeps: ignoreCreeps };
-        if(showPath) {
-            moveOptions.visualizePathStyle = {
-                fill: 'transparent',
-                stroke: pathColor,
+        let travelOpts = {
+            routeCallback: intel.routeCallback,
+            useFindRoute: true,
+            ignoreCreeps: options.ignoreCreeps !== undefined ? options.ignoreCreeps : true,
+            repath: options.repath !== undefined ? options.repath : (this.REPATH_BY_ROLE[creep.memory.role] || 0),
+        };
+        if(options.range !== undefined) travelOpts.range = options.range;
+        if(options.stuckValue !== undefined) travelOpts.stuckValue = options.stuckValue;
+        if(options.maxOps !== undefined) travelOpts.maxOps = options.maxOps;
+        if(options.allowHostile) travelOpts.allowHostile = true;
+        if(showPath){
+            travelOpts.visualizePathStyle = {
+                stroke: options.pathColor || "#ffffff",
                 lineStyle: 'dashed',
                 strokeWidth: .15,
-                opacity: .1
-            }
+                opacity: .1,
+            };
         }
 
-        let result
-
-        if(target instanceof Object && !(target instanceof RoomPosition) && target.x !== undefined && target.y !== undefined){
-          result = creep.moveTo(target.x,target.y,moveOptions);
-        }else{
-          result = creep.moveTo(target,moveOptions);
-        }
+        let result = Traveler.travelTo(creep, target, travelOpts);
         if(result === ERR_INVALID_ARGS){
             console.log("moveToTarget: Invalid Arguments")
-        }else if(result === ERR_NOT_FOUND){
-            console.log("moveToTarget: Path Not Found")
         }else if(result === ERR_NO_BODYPART){
             console.log("moveToTarget: Missing required BodyPart")
         }

@@ -1228,50 +1228,15 @@ getLabFillTarget(creep) {
   },
 
   moveToRoom(creep, room = creep.memory.targetRoom) {
-    // Just-crossed nudge: step inward exactly once when we enter a new room while
-    // still standing on the border tile. Triggered by room transition, not by edge
-    // position alone, so it cannot flap on subsequent ticks.
-    if (creep.memory.previousRoom !== creep.room.name) {
-      creep.memory.previousRoom = creep.room.name;
-      if (creep.pos.x === 0)  { creep.move(RIGHT);  return false; }
-      if (creep.pos.x === 49) { creep.move(LEFT);   return false; }
-      if (creep.pos.y === 0)  { creep.move(BOTTOM); return false; }
-      if (creep.pos.y === 49) { creep.move(TOP);    return false; }
-    }
-
-    if (this.inTargetRoom(creep, room)) {
-      return true;
-    }
-
-    // Cache the chosen exit tile per (currentRoom -> targetRoom) so we don't run
-    // findClosestByPath(findExitTo(...)) every tick. Cache key encodes both ends,
-    // so it self-invalidates on room change or new destination.
-    let cacheKey = creep.room.name + ">" + room;
-    let cached = creep.memory._exitCache;
-    let exitPos;
-    if (cached && cached.key === cacheKey) {
-      exitPos = new RoomPosition(cached.x, cached.y, cached.roomName);
-    } else {
-      let dir = creep.room.findExitTo(room);
-      if (dir === ERR_NO_PATH || dir === ERR_INVALID_ARGS) {
-        return false;
-      }
-      let exit = creep.pos.findClosestByPath(dir, { algorithm: "astar" });
-      if (!exit) {
-        return false;
-      }
-      exitPos = exit;
-      creep.memory._exitCache = { key: cacheKey, x: exit.x, y: exit.y, roomName: exit.roomName };
-    }
-
+    // Traveler handles multi-room routing, exit selection, border stepping, and
+    // hostile-room avoidance via intel.routeCallback. We just hand it a deep
+    // target inside the room with a generous range so it doesn't reroute when
+    // any tile in the room is reachable.
+    if (this.inTargetRoom(creep, room)) return true;
     util.moveToTarget(
       creep,
-      {
-        showPath: creep.room.memory.showPath,
-        pathColor: "#0c02d1",
-        reusePath: 10,
-      },
-      exitPos,
+      { showPath: creep.room.memory.showPath, pathColor: "#0c02d1", range: 22 },
+      new RoomPosition(25, 25, room),
     );
     return false;
   },
