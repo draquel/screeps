@@ -96,6 +96,8 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | `avoidRoom(name)` | Set `avoid: true` — permanent block (never auto-cleared by `intel.update`) |
 | `unavoidRoom(name)` | Clear the `avoid` flag |
 | `markHostile(name)` | Set `hostile: true, hostileSeen: Game.time`. Will age out after `Memory.intel.hostileTTL` ticks. Only meaningful for rooms you don't have vision in — otherwise `intel.update` recomputes it next tick |
+| `ignoreHostile(name)` | Set `ignoreHostile: true` — `intel.update` still records hostility (you keep visibility) but `routeCallback` treats the room as safe. Use when you must route through a hostile room |
+| `unignoreHostile(name)` | Clear the `ignoreHostile` flag |
 | `setRoomOwner(name, owner)` | Set the `owner` field manually (overwritten by `intel.update` if you have vision) |
 | `clearRoom(name)` | Delete the entry entirely |
 | `intel(name)` | Log and return the current entry |

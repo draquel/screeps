@@ -73,7 +73,11 @@ function routeCallback(roomName) {
     const r = Memory.intel && Memory.intel.rooms ? Memory.intel.rooms[roomName] : null;
     if (r) {
         if (r.avoid) return Number.POSITIVE_INFINITY;
-        if (r.hostile && (Game.time - (r.hostileSeen || 0)) < (Memory.intel.hostileTTL || DEFAULT_HOSTILE_TTL)) {
+        // ignoreHostile is a per-room override: observation still records
+        // hostility (we keep the visibility), but routing treats the room
+        // as safe. Useful for "I know it's hostile, but I have no other path".
+        if (r.hostile && !r.ignoreHostile
+                && (Game.time - (r.hostileSeen || 0)) < (Memory.intel.hostileTTL || DEFAULT_HOSTILE_TTL)) {
             return Number.POSITIVE_INFINITY;
         }
         if (r.sourceKeeper) return SK_ROOM_COST;

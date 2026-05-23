@@ -63,6 +63,15 @@ module.exports = {
       r.hostileSeen = Game.time
       console.log('intel: '+name+' hostile=true (TTL '+(Memory.intel.hostileTTL || 5000)+' ticks)')
     },
+    ignoreHostile(name) {
+      this._intelRoom(name).ignoreHostile = true
+      console.log('intel: '+name+' ignoreHostile=true (routing will treat as safe even if observed hostile)')
+    },
+    unignoreHostile(name) {
+      if(!Memory.intel || !Memory.intel.rooms || !Memory.intel.rooms[name]) return
+      delete Memory.intel.rooms[name].ignoreHostile
+      console.log('intel: '+name+' ignoreHostile cleared')
+    },
     setRoomOwner(name, owner) {
       this._intelRoom(name).owner = owner
       console.log('intel: '+name+' owner='+owner)
