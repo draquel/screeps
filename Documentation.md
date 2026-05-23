@@ -11,14 +11,19 @@ A bot for the online MMO [Screeps World](https://www.screeps.com/). Code is depl
 | `creeps.js` | Creep role dispatcher and role logic |
 | `creeps.work.js` | Worker action functions (harvest, build, repair, etc.) |
 | `creeps.combat.js` | Combat action functions (attack, heal, claim, etc.) |
-| `rooms.js` | Room management (towers, links, spawning, mining) |
+| `rooms.js` | Room management (towers, links, spawning, mining, labs, factory, terminal) |
 | `market.js` | In-game market order management |
-| `util.js` | Utility functions (spawning, memory, movement, builds) |
+| `util.js` | Utility functions (spawning, memory, movement facade, builds) |
+| `traffic.js` | Tier 2 traffic manager — captures move intents and shoves idle blockers |
+| `intel.js` | Tier 3 room intelligence — passive observation and `routeCallback` for Traveler |
+| `Traveler.js` | Vendored `bonzaiferroni/Traveler` (locally patched, see Movement Architecture) |
 | `screeps.prototype.js` | Prototype loader (aggregates all prototype modules) |
 | `creep.prototype.js` | Creep prototype extensions |
 | `room.prototype.js` | Room prototype extensions |
 | `misc.prototype.js` | Misc prototype extensions (Source, Tower, Lab, Factory) |
 | `Gruntfile.js` | Grunt deployment configuration |
+| `Documentation.md` | This file — module reference and architecture |
+| `CLAUDE.md` | Per-developer context for the Claude Code assistant (gitignored) |
 
 ---
 
@@ -28,12 +33,16 @@ A bot for the online MMO [Screeps World](https://www.screeps.com/). Code is depl
 
 The game loop entry point. Each tick it:
 
-1. Loads utility functions onto `Game.util`
-2. Loads console API onto `Game.cmd`
-3. Applies all prototype extensions via `screeps.prototype.load()`
-3. Cleans up stale memory (dead creeps, abandoned rooms)
-4. Runs room operations for each owned room
-5. Runs creep operations for each owned creep
+1. Loads utility functions onto `Game.util` and console API onto `Game.cmd`
+2. Applies all prototype extensions via `screeps.prototype.load()`
+3. Calls `traffic.install()` to (re)wrap `Creep.prototype.move` for intent capture
+4. Cleans up stale memory (dead creeps, abandoned rooms); every 1000 ticks also runs `intel.cleanup()`
+5. Calls `intel.update()` to refresh `Memory.intel.rooms` for visible rooms (powers the route filter)
+6. Runs room operations for each owned room
+7. Runs creep operations for each owned creep
+8. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
+
+The ordering matters: `traffic.install` must run after `proto.load` each tick (the prototype loader can reset the wrapper), `intel.update` must run before role logic so `intel.routeCallback` has fresh data, and `traffic.resolve` must run last so it sees every intent captured during the role passes.
 
 ### cmd.js
 
@@ -56,6 +65,7 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | Function | Description |
 |----------|-------------|
 | `setRoleProp(room, role, prop, value)` | Set a memory property on all creeps of a role in a room |
+| `getRoleProp(room, role, prop)` | Log the value of a memory property for all creeps of a role in a room |
 
 **Queries:**
 
@@ -68,8 +78,16 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 
 | Function | Description |
 |----------|-------------|
-| `spawn(room, role, count, opts)` | Add creeps to a room's spawn queue |
+| `spawn(room, role, count, opts, expedite)` | Add creeps to a room's spawn queue; `expedite=true` jumps the queue |
 | `clearQueue(room)` | Clear a room's spawn queue |
+| `unstuckQueue(room)` | Force progress on a wedged spawn queue |
+
+**Miscellaneous:**
+
+| Function | Description |
+|----------|-------------|
+| `sellResources(room, resource, amount)` | Sell from terminal; defaults to the room's native mineral if `resource` is null |
+| `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
 
 **Console Examples:**
 
@@ -102,25 +120,27 @@ The creep role dispatcher. Routes each creep to its role handler based on `creep
 
 | Role | Description |
 |------|-------------|
-| `scout` | Moves to a target room then collects from sources |
-| `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures; falls back to upgrading the controller |
-| `builder` | Builds construction sites; falls back to upgrading the controller |
-| `maintenance` | Refills base energy, repairs non-wall/rampart structures, repairs walls/ramparts up to 100k hits; falls back to upgrading |
-| `d-maintenance` | Defense maintenance - repairs ramparts and walls at progressively higher thresholds (25%, 50%, 75%, 100%) |
-| `transporter` | Moves resources between structures (containers, links, terminals, factories, storages) |
-| `miner` | Dedicated harvester assigned to a single source or mineral; deposits into nearby links or containers |
+| `scout` | Moves to a target room then patrols sources and controller |
+| `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures |
+| `worker` | Refills base energy, repairs structures and ramparts, builds construction sites; falls back to upgrading the controller. Eligibility flags in `memory.eligibility` (`base`, `repair`, `ramparts`, `build`) gate which subtasks the creep will pick up |
+| `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs) |
+| `transporter2` | Variant transporter that prioritizes resources currently in its store |
+| `mineralTransporter` | Specialized hauler for lab/factory feeds and terminal top-ups (drain/fill/share priorities; see `runMineralTransporter` in `creeps.js`) |
+| `miner` | Dedicated harvester assigned to a single source; deposits into nearby links or containers. Sets `memory.noShove` while parked on its work tile |
+| `mineralMiner` | Same dispatcher as `miner` but with mineral-tuned body via `getRoleBuild` |
 | `claimer` | Moves to a target room and claims/reserves/attacks the controller |
 | `healer` | Follows a target creep and heals them |
-| `defend` | Finds and attacks hostile creeps/structures in the current room |
+| `defender` | Finds and attacks hostile creeps/structures in the current room |
 | `attack` | Moves to a target room and attacks hostile creeps/structures |
+| `ranged` | Ranged-attack variant |
 
 **Room Navigation Helpers:**
 
-- `inTargetRoom(creep)` - checks if creep is in its assigned target room
-- `inHomeRoom(creep)` - checks if creep is in its home room
-- `moveToRoom(creep, room)` - handles cross-room navigation with edge-avoidance logic
-- `moveToHome(creep)` - navigates creep back to its home room
-- `getTargetResource(creep)` - returns the creep's target resource type (defaults to energy)
+- `inTargetRoom(creep)` — true if creep is in its assigned target room
+- `inHomeRoom(creep)` — true if creep is in its home (spawn) room
+- `moveToRoom(creep, room)` — thin shim that calls `util.moveToTarget` with `(25, 25, room)` and `range: 22`. Traveler handles exit selection, border crossing, and hostile-room avoidance via `intel.routeCallback`
+- `moveToHome(creep)` — `moveToRoom(creep, creep.memory.room)`
+- `getTargetResource(creep)` — returns `creep.memory.targetResource` or `RESOURCE_ENERGY`
 
 ### creeps.work.js
 
@@ -258,7 +278,7 @@ Shared utility functions used across all modules.
 
 **Movement:**
 
-- `moveToTarget(creep, options, target)` - Wrapper around `creep.moveTo()` with configurable path visualization (color, opacity, line style) and path reuse settings
+- `moveToTarget(creep, options, target)` — the only entry point role code should use for movement. Delegates to `Traveler.travelTo` with `intel.routeCallback` injected and per-role `repath` defaults from `util.REPATH_BY_ROLE`. See the [Movement Architecture](#movement-architecture) section for the full pipeline.
 
 **Creep Queries:**
 
@@ -281,22 +301,24 @@ Shared utility functions used across all modules.
 
 **Build Library (`getRoleBuild`):**
 
-Predefined body builds for each role at various levels (energy cost):
+Predefined body builds for each role at various levels. See `util.js` for exact part counts; energy cost grows with level.
 
-| Role | Levels | Energy Range |
-|------|--------|-------------|
-| scout | 1-2 | 250-400 |
-| harvester | 1-7 | 300-2100 |
-| builder | 1-7 | 300-2100 |
-| maintenance | 1-4 | 300-1200 |
-| d-maintenance | 1-4 | 300-1050 |
-| transporter | 1-5 | 300-1500 |
-| miner | 1-5 | 250-1050 |
-| defender | 1-5 | 310-870 |
-| healer | 1-5 | 300-970 |
-| attack | 1-5 | 300-870 |
-| ranged | 1-4 | 360-780 |
-| claimer | 1-3 | 800-2000 |
+| Role | Levels |
+|------|--------|
+| scout | 1–2 |
+| harvester | 1–8 |
+| worker | 1–8 |
+| transporter | 1–8 |
+| mineralTransporter | 1–8 |
+| miner | 1–8 (WORK capped at 6 — a single source is 10 E/tick) |
+| mineralMiner | 1–8 (WORK scales further — extractor throughput, not capped) |
+| claimer | 1–5 |
+| attack | 1–8 |
+| defender | 1–8 |
+| healer | 1–8 |
+| ranged | 1–8 |
+
+Body part order convention: combat roles list TOUGH → functional → MOVE so damage parts survive longer than mobility (retreat-capable).
 
 **Spatial Utilities:**
 
@@ -337,6 +359,87 @@ Adds properties to `Creep.prototype`:
 
 - **`Creep.prototype.isFull`** - Whether the creep's store is full
 - **`Creep.prototype.work`** - Lazy-loaded reference to the `creeps.work` module
+
+---
+
+## Movement Architecture
+
+All creep movement goes through `util.moveToTarget(creep, options, target)`. Role code must not call `creep.moveTo`, `creep.move`, or `Traveler.travelTo` directly — the wrapper is what applies route filtering, traffic resolution, and per-role repath defaults.
+
+The pipeline is three layers, each in its own file:
+
+### `Traveler.js` — pathfinding
+
+Vendored from [bonzaiferroni/Traveler](https://github.com/bonzaiferroni/Traveler). Computes multi-room `PathFinder` paths gated by `Game.map.findRoute`, serializes them onto `creep.memory._trav`, and owns stuck detection.
+
+**Local patch**: a `visualize` option gates the three visualization sites in `travelTo` (fatigue circle, stuck circle, path draw) and the start-circle/line draws in `serializePath`. If the vendored copy is ever refreshed from upstream, re-apply the patch or `room.memory.showPath` will stop being honored.
+
+### `intel.js` — room observation and route filtering
+
+Each tick, `intel.update()` does a passive pass over every room in `Game.rooms` and writes:
+
+```js
+Memory.intel.rooms[name] = {
+    owner,         // controller owner username, or null
+    reservedBy,    // controller reservation username, or null
+    hostile,       // hostile creeps/structures or non-self owner
+    hostileSeen,   // tick we last observed hostility
+    sourceKeeper,  // SK lair present (set once, never flips)
+    avoid,         // user-set permanent override
+    lastScouted,   // last tick we had vision
+}
+```
+
+Configuration lives at the top of `Memory.intel`:
+
+- `Memory.intel.hostileTTL` (default `5000`) — ticks after which `hostile` ages out
+- `Memory.intel.intelMaxAge` (default `20000`) — ticks after which an unvisited room is dropped from intel
+- `Memory.intel.username` — auto-populated from any owned spawn on first run
+
+`intel.routeCallback(roomName)` is passed to `Traveler.travelTo` and returns:
+
+- `Infinity` — if `avoid` is set, or `hostile` was observed within `hostileTTL`
+- `2.5` — for Source Keeper rooms (observed via `sourceKeeper:true` or inferred from room-name regex)
+- `undefined` — otherwise, so Traveler's built-in heuristics apply
+
+`intel.cleanup()` runs every 1000 ticks from `main.js` to evict stale rooms.
+
+### `traffic.js` — intent capture and shove resolution
+
+`traffic.install()` wraps `Creep.prototype.move`. Instead of executing immediately, the wrapper captures `(creep, dir)` into `Game._trafficIntents` (per-tick, on `Game` not `Memory`). Pulling (`move(otherCreep)`) and fatigued creeps short-circuit unwrapped. Directions outside 1..8 are passed through to the original move without being captured.
+
+After all roles have run, `traffic.resolve()` runs:
+
+1. **Idle blocker shove**: for each captured intent, if the destination tile holds a friendly creep with no intent of its own and no `noShove` flag, queue a one-tile shove for that blocker. Shove direction prefers non-road tiles and tiles still in range of the blocker's `memory.target` so the shove doesn't waste useful work.
+2. **Issue moves**: for every intent (original + shoves), call the saved `originalMove`. Native Screeps resolves swaps and conga lines atomically when both creeps have intents this tick, so we don't need explicit swap logic.
+
+### Stationary roles must opt out
+
+A creep that intentionally stands still — miner on container, upgrader on link, etc. — should set `creep.memory.noShove = true` once it reaches its work tile and `delete` it while traveling. Currently wired in `runMiner` (covers both `miner` and `mineralMiner` since both dispatch through it). Add the same pattern to any future stationary role.
+
+### Options recognized by `util.moveToTarget`
+
+| Option | Default | Notes |
+|--------|---------|-------|
+| `showPath` | `creep.room.memory.showPath` | Toggles all Traveler visuals via the `visualize` patch |
+| `pathColor` | `"#ffffff"` | Currently unused — Traveler hardcodes orange/red. Kept for API stability |
+| `range` | Traveler default (1) | Pass `22` for "anywhere in the room" (`moveToRoom`) |
+| `ignoreCreeps` | `true` | Stops cached paths from detouring around blockers that have walked away |
+| `repath` | from `util.REPATH_BY_ROLE` (combat=1, others=0) | Chance per tick of recomputing the path |
+| `allowHostile`, `stuckValue`, `maxOps` | forwarded to Traveler |
+
+### Main loop ordering (must remain in this order)
+
+```
+proto.load()
+traffic.install()      // must run after proto.load every tick
+util.cleanupMemory()
+intel.cleanup()        // throttled to every 1000 ticks
+intel.update()         // before role logic so routeCallback has fresh data
+rooms.run(...)
+creeps.run(...)
+traffic.resolve()      // must be last
+```
 
 ---
 
