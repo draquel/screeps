@@ -26,7 +26,9 @@ const ALL_DIRS = [TOP,TOP_RIGHT,RIGHT,BOTTOM_RIGHT,BOTTOM,BOTTOM_LEFT,LEFT,TOP_L
 let originalMove = null;
 
 function offsetPos(pos, dir) {
-    const [dx, dy] = DIR_OFFSETS[dir];
+    const offset = DIR_OFFSETS[dir];
+    if (!offset) return null;                 // not a valid direction constant
+    const [dx, dy] = offset;
     const x = pos.x + dx, y = pos.y + dy;
     // Crossing a room border: no in-room conflict resolution possible.
     if (x < 0 || x > 49 || y < 0 || y > 49) return null;
@@ -82,6 +84,11 @@ function install() {
     const wrapped = function(direction) {
         // Pulling passes a Creep, not a direction – let it through unwrapped.
         if (typeof direction !== 'number') {
+            return originalMove.call(this, direction);
+        }
+        // Reject anything outside 1..8 (NaN, 0, fractional, etc.) so we never
+        // capture an intent the resolver or engine can't act on.
+        if (!Number.isInteger(direction) || direction < 1 || direction > 8) {
             return originalMove.call(this, direction);
         }
         if (this.fatigue > 0) return ERR_TIRED;
