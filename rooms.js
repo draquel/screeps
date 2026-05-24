@@ -745,12 +745,29 @@ module.exports = {
     },
 
     unstuckSpawnQueue(room){
-      this.checkRoomObj(room)
-      if(room.memory.spawnQueue[0].memory.level > 1){
-        console.log('['+room.name+'] Spawn Queue: Stuck queue detected')
-        return this.queCreep(room,"worker",1,{level:1,respawn:false},true)
+      room = this.checkRoomObj(room)
+      if(!room.memory.spawnQueue || !room.memory.spawnQueue.length) return false;
+      if(room.memory.spawnQueue[0].memory.level <= 1) return false;
+
+      // Pick the highest worker level the room can currently afford rather than
+      // hardcoding L1. The point of the unstuck is to refresh the economy ASAP;
+      // a higher-level worker harvests/repairs faster per spawn cycle. Falls
+      // back to "queue nothing" if even L1 is unaffordable so we don't pile
+      // up unspawnable entries while waiting for energy.
+      const available = room.energyAvailable;
+      let level = 0;
+      for(let l = 8; l >= 1; l--){
+        const build = util.getRoleBuild("worker", l);
+        if(!build) continue;
+        if(util.calcCreepBuildEnergy(build) <= available){
+          level = l;
+          break;
+        }
       }
-      return false
+      if(level === 0) return false;
+
+      console.log('['+room.name+'] Spawn Queue: Stuck queue detected — queuing L'+level+' worker (energyAvailable='+available+')');
+      return this.queCreep(room,"worker",1,{level:level,respawn:false},true);
     },
 
     availableExtensions(room){
