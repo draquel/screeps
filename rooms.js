@@ -747,26 +747,36 @@ module.exports = {
     unstuckSpawnQueue(room){
       room = this.checkRoomObj(room)
       if(!room.memory.spawnQueue || !room.memory.spawnQueue.length) return false;
-      if(room.memory.spawnQueue[0].memory.level <= 1) return false;
 
-      // Pick the highest worker level the room can currently afford rather than
-      // hardcoding L1. The point of the unstuck is to refresh the economy ASAP;
-      // a higher-level worker harvests/repairs faster per spawn cycle. Falls
-      // back to "queue nothing" if even L1 is unaffordable so we don't pile
-      // up unspawnable entries while waiting for energy.
+      // Gate on affordability of queue[0], not level. The previous level-based
+      // heuristic assumed unstick always queues L1 — once we started queuing
+      // higher-level unstick workers, the new queue head was still >L1 so
+      // the gate stayed open and processSpawnQueue's early-return after a
+      // successful unstick prevented any spawn from actually happening,
+      // producing thousands of duplicates.
+      //
+      // With this gate: when the unstick worker we unshift is itself
+      // affordable (which it will be, since we sized it to current energy),
+      // the next tick's call returns false, the spawn loop runs, and the
+      // unstick worker spawns normally.
+      const head = room.memory.spawnQueue[0];
+      if(!head || !head.memory || !head.memory.role) return false;
+      const headBuild = util.getRoleBuild(head.memory.role, head.memory.level || 1);
+      const headCost = util.calcCreepBuildEnergy(headBuild);
+      if(headCost <= room.energyAvailable) return false;
+
+      // Pick the highest worker level we can currently afford. Fall back to
+      // "queue nothing" if even L1 is unaffordable so we don't pile up
+      // unspawnable entries while waiting for energy.
       const available = room.energyAvailable;
       let level = 0;
       for(let l = 8; l >= 1; l--){
-        const build = util.getRoleBuild("worker", l);
-        if(!build) continue;
-        if(util.calcCreepBuildEnergy(build) <= available){
-          level = l;
-          break;
-        }
+        const cost = util.calcCreepBuildEnergy(util.getRoleBuild("worker", l));
+        if(cost <= available){ level = l; break; }
       }
       if(level === 0) return false;
 
-      console.log('['+room.name+'] Spawn Queue: Stuck queue detected — queuing L'+level+' worker (energyAvailable='+available+')');
+      console.log('['+room.name+'] Spawn Queue: Stuck queue detected — queuing L'+level+' worker (energyAvailable='+available+', head cost was '+headCost+')');
       return this.queCreep(room,"worker",1,{level:level,respawn:false},true);
     },
 
