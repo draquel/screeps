@@ -579,7 +579,12 @@ Traveler.creepMatrixCache = {};
 exports.Traveler = Traveler;
 // this might be higher than you wish, setting it lower is a great way to diagnose creep behavior issues. When creeps
 // need to repath to often or they aren't finding valid paths, it can sometimes point to problems elsewhere in your code
-const REPORT_CPU_THRESHOLD = 1000;
+// Raised from upstream's 1000: state.cpu is cumulative over a creep's whole
+// _trav lifetime, so any long-lived creep (especially harvesters whose drop/
+// tomb targets churn) eventually crosses 1000 just from normal operation. 5000
+// (~3 CPU/tick averaged over a 1500-tick life) flags genuinely pathologic
+// creeps without spamming on normal behavior.
+const REPORT_CPU_THRESHOLD = 5000;
 const DEFAULT_MAXOPS = 20000;
 const DEFAULT_STUCK_VALUE = 2;
 const STATE_PREV_X = 0;
