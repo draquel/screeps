@@ -944,9 +944,16 @@ getLabFillTargetRaw(room) {
         if (!resource) continue;
         let target = lab.memory.amount || 2000;
         let current = lab.store[resource] || 0;
-        if (current < target) {
-            return { lab, resource };
-        }
+        if (current >= target) continue;
+        // Skip labs we can't actually source from: collectResource will return
+        // empty, but Priority 2 returns unconditionally and we'd loop forever
+        // here, blocking lower-priority work (miner container drains, foreign
+        // mineral management, etc.). Only flag labs whose resource exists in
+        // storage or terminal.
+        let inStorage = room.storage ? (room.storage.store[resource] || 0) : 0;
+        let inTerminal = room.terminal ? (room.terminal.store[resource] || 0) : 0;
+        if (inStorage + inTerminal === 0) continue;
+        return { lab, resource };
     }
     return null;
 },
