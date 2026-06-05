@@ -810,6 +810,7 @@ module.exports = {
             creep.memory.labFillResource = labTarget.resource;
             work.collectResource(creep, {
                 storages: true, containers: false, terminals: true,
+                ignoreTerminalThresholds: true,
                 drops: false, tombs: false, links: false, sources: false,
             }, labTarget.resource);
             return;
@@ -831,6 +832,7 @@ module.exports = {
             creep.memory.factoryFeedResource = factoryNeed.resource;
             work.collectResource(creep, {
                 storages: true, containers: false, terminals: true,
+                ignoreTerminalThresholds: true,
                 drops: false, tombs: false, links: false, sources: false,
             }, factoryNeed.resource);
             return;

@@ -173,10 +173,15 @@ if(options.containers){
             if(terminal){
                 let used = terminal.store.getUsedCapacity(resource) || 0;
                 let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
-                let shouldCollect =
-                    (resource !== RESOURCE_ENERGY && resource !== roomMineral && used > 0) ||
-                    (resource === RESOURCE_ENERGY && used > 11000) ||
-                    (resource === roomMineral && used > 26000);
+                // ignoreTerminalThresholds is a per-call escape hatch for callers
+                // that legitimately need the resource regardless of the export-cap
+                // protection (lab fill, factory feed). For those, "terminal has any"
+                // is the right test.
+                let shouldCollect = options.ignoreTerminalThresholds
+                    ? used > 0
+                    : (resource !== RESOURCE_ENERGY && resource !== roomMineral && used > 0) ||
+                      (resource === RESOURCE_ENERGY && used > 11000) ||
+                      (resource === roomMineral && used > 26000);
                 if(shouldCollect){
                     targets.push(terminal);
                 }
