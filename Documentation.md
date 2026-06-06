@@ -73,6 +73,7 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 |----------|-------------|
 | `creeps(room, role)` | List all creeps of a role in a room (includes spawning/queued) |
 | `counts(room)` | Get a Map of role counts for a room |
+| `mem(name)` | Pretty-print and return a single creep's memory by name |
 
 **Spawn Queue:**
 

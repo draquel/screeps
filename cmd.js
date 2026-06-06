@@ -29,6 +29,12 @@ module.exports = {
         let creeps = Game.rooms[room].find(FIND_MY_CREEPS)
         return util.getCountMap(creeps.map(c => c.memory.role))
     },
+    mem(name) {
+        const c = Game.creeps[name]
+        if(!c){ console.log('cmd.mem: no creep named '+name); return null; }
+        console.log(name+': '+JSON.stringify(c.memory, null, 2))
+        return c.memory
+    },
 
     // Spawn queue
     spawn(room, role, count, opts, expidite = false) { rooms.queCreep(room, role, count, opts, expidite) },
