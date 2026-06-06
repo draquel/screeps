@@ -548,16 +548,26 @@ class Traveler {
             state.cpu = travelData.state[STATE_CPU];
             state.stuckCount = travelData.state[STATE_STUCK];
             state.destination = new RoomPosition(travelData.state[STATE_DEST_X], travelData.state[STATE_DEST_Y], travelData.state[STATE_DEST_ROOMNAME]);
+            state.cpuWindowStart = travelData.state[STATE_CPU_WINDOW_START] || Game.time;
+            // Reset cumulative CPU when the rolling window elapses so the
+            // heavy-cpu threshold measures recent average rate rather than
+            // lifetime accumulation. Backward compat: legacy state arrays
+            // without index 7 default cpuWindowStart to now.
+            if (Game.time - state.cpuWindowStart >= CPU_REPORT_WINDOW_TICKS) {
+                state.cpu = 0;
+                state.cpuWindowStart = Game.time;
+            }
         }
         else {
             state.cpu = 0;
+            state.cpuWindowStart = Game.time;
             state.destination = destination;
         }
         return state;
     }
     static serializeState(creep, destination, state, travelData) {
         travelData.state = [creep.pos.x, creep.pos.y, state.stuckCount, state.cpu, destination.x, destination.y,
-            destination.roomName];
+            destination.roomName, state.cpuWindowStart];
     }
     static isStuck(creep, state) {
         let stuck = false;
@@ -579,12 +589,13 @@ Traveler.creepMatrixCache = {};
 exports.Traveler = Traveler;
 // this might be higher than you wish, setting it lower is a great way to diagnose creep behavior issues. When creeps
 // need to repath to often or they aren't finding valid paths, it can sometimes point to problems elsewhere in your code
-// Raised from upstream's 1000: state.cpu is cumulative over a creep's whole
-// _trav lifetime, so any long-lived creep (especially harvesters whose drop/
-// tomb targets churn) eventually crosses 1000 just from normal operation. 5000
-// (~3 CPU/tick averaged over a 1500-tick life) flags genuinely pathologic
-// creeps without spamming on normal behavior.
-const REPORT_CPU_THRESHOLD = 5000;
+// state.cpu is now reset every CPU_REPORT_WINDOW_TICKS so the threshold
+// measures recent path-finding cost, not creep-lifetime accumulation.
+// 200 ticks (~15 wall-clock minutes on shard0) × ~10 CPU/tick = 2000.
+// Firing the log means the creep sustained ~10+ CPU/tick on path-finding
+// over the window — a genuine pattern, not a single expensive path.
+const REPORT_CPU_THRESHOLD = 2000;
+const CPU_REPORT_WINDOW_TICKS = 200;
 const DEFAULT_MAXOPS = 20000;
 const DEFAULT_STUCK_VALUE = 2;
 const STATE_PREV_X = 0;
@@ -594,6 +605,7 @@ const STATE_CPU = 3;
 const STATE_DEST_X = 4;
 const STATE_DEST_Y = 5;
 const STATE_DEST_ROOMNAME = 6;
+const STATE_CPU_WINDOW_START = 7;
 // assigns a function to Creep.prototype: creep.travelTo(destination)
 Creep.prototype.travelTo = function (destination, options) {
     return Traveler.travelTo(this, destination, options);
