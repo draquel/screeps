@@ -94,8 +94,13 @@ class Traveler {
             let cpuUsed = Game.cpu.getUsed() - cpu;
             state.cpu = _.round(cpuUsed + state.cpu);
             if (state.cpu > REPORT_CPU_THRESHOLD) {
-                // see note at end of file for more info on this
-                console.log(`TRAVELER: heavy cpu use: ${creep.name}, cpu: ${state.cpu} origin: ${creep.pos}, dest: ${destination}`);
+                // Silenced: the metric isn't actionable for our setup. Traveler
+                // runs useFindRoute + intel.routeCallback on every path build,
+                // and combat roles repath each tick, so sustained pathing CPU
+                // is structural, not a hotspot to fix. The rolling-window reset
+                // logic is left in place so the metric stays meaningful if
+                // re-enabled.
+                // console.log(`TRAVELER: heavy cpu use: ${creep.name}, cpu: ${state.cpu} origin: ${creep.pos}, dest: ${destination}`);
             }
             let color = "orange";
             if (ret.incomplete) {
