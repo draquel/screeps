@@ -64,8 +64,16 @@ module.exports = {
 
     runTowers(room){
         let towers = room.find(FIND_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_TOWER});
+        // Cache once per room — every tower would otherwise re-run the same
+        // find + filter passes. Healers are prioritized so we focus down enemy
+        // sustain; only HEAL parts that still have hits count.
+        let hostiles = room.find(FIND_HOSTILE_CREEPS);
+        let healers = hostiles.filter(c => c.body.some(p => p.type === HEAL && p.hits > 0));
         for(let j = 0; j < towers.length; j++){
-            let target = towers[j].pos.findClosestByRange(FIND_HOSTILE_CREEPS)
+            let target = towers[j].pos.findClosestByRange(healers);
+            if(target === null){
+                target = towers[j].pos.findClosestByRange(hostiles);
+            }
             if(target !== null){
                 towers[j].attack(target)
             }else{
