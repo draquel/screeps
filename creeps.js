@@ -1186,14 +1186,13 @@ getLabFillTarget(creep) {
     }
 
     if (creep.memory.fighting) {
-      if (this.moveToRoom(creep)) {
-        let targetObj = Game.getObjectById(creep.memory.target);
-        //console.log(creep.name + ' Attacking '+ targetObj.name == null ? targetObj.id : targetObj.name )
-        if (targetObj != null) {
-          combat.combatAttack(creep, targetObj);
-        } else {
-          creep.memory.target = null;
-        }
+      // Room-transit guard above already ensures we're in the right room
+      // (targetRoom if set, else home). No need to re-check here.
+      let targetObj = Game.getObjectById(creep.memory.target);
+      if (targetObj != null) {
+        combat.combatAttack(creep, targetObj);
+      } else {
+        creep.memory.target = null;
       }
     } else {
       let target = combat.getAttackTarget(creep);
@@ -1278,6 +1277,10 @@ getLabFillTarget(creep) {
     // hostile-room avoidance via intel.routeCallback. We just hand it a deep
     // target inside the room with a generous range so it doesn't reroute when
     // any tile in the room is reachable.
+    // Defensive: if no room is specified, treat as "we're there" rather than
+    // constructing a RoomPosition with an undefined roomName (the engine
+    // throws inside roomNameToXY).
+    if (!room) return true;
     if (this.inTargetRoom(creep, room)) return true;
     util.moveToTarget(
       creep,
