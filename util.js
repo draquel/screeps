@@ -16,6 +16,21 @@ var util = {
         healer: 1,
     },
 
+    getRoomByName(name = null){
+        if(Object.keys(Game.rooms).includes(name)){
+            return Game.rooms[name]
+        }
+        return null
+    },
+
+    // Accepts either a Room object or a room-name string and always returns the
+    // Room object (or null if not visible). Room references vary across the
+    // codebase, so normalize through this before using room properties.
+    checkRoomObj(room){
+        if(typeof room === 'string'){ room = this.getRoomByName(room) }
+        return room
+    },
+
     cleanupMemory: function(){
         if(!Memory.creeps && !Memory.rooms){ return; }
 
@@ -519,12 +534,7 @@ var util = {
    runTest(creepName){
     // Paste into Screeps console, replace name
     let creep = Game.creeps[creepName];
-    let room = creep.room 
-        if(typeof room === 'string'){
-            if(Object.keys(Game.rooms).includes(room)){
-                room = Game.rooms[room]
-            }
-        }
+    let room = this.checkRoomObj(creep.room);
     let roomMineral = room.mineral ? room.mineral.mineralType : null;
     let work = require('./creeps.work');
 

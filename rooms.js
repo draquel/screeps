@@ -5,10 +5,7 @@ const creep = require("./creeps");
 
 module.exports = {
     getRoomByName(name = null){
-        if(Object.keys(Game.rooms).includes(name)){
-            return Game.rooms[name]
-        }
-        return null
+        return util.getRoomByName(name)
     },
 
     initMem(room){
@@ -660,8 +657,7 @@ module.exports = {
     // },
 
     checkRoomObj(room){
-        if(typeof room === 'string'){ room = this.getRoomByName(room) }
-        return room
+        return util.checkRoomObj(room)
     },
 
     updateSpawning(room){
