@@ -309,6 +309,22 @@ module.exports = {
       );
     } else {
       if (!this.inHomeRoom(creep)) {
+        // In the harvest target room, spend a bounded slice of the load on local
+        // build/repair, then carry the reserve home. The reserve is what prevents
+        // the maintain→empty→harvest→maintain cycle that would trap the creep here.
+        const reserve = creep.store.getCapacity() * 0.75;
+        if (
+          resource === RESOURCE_ENERGY &&
+          this.inTargetRoom(creep) &&
+          creep.store[resource] > reserve
+        ) {
+          if (work.buildConstructionSites(creep)) {
+            return;
+          }
+          if (work.maintainBaseStructures(creep)) {
+            return;
+          }
+        }
         this.moveToHome(creep);
         return;
       }
