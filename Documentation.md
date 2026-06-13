@@ -145,7 +145,7 @@ The creep role dispatcher. Routes each creep to its role handler based on `creep
 | Role | Description |
 |------|-------------|
 | `scout` | Moves to a target room then patrols sources and controller |
-| `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures |
+| `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures. Energy harvesters working a remote `targetRoom` spend the top 25% of their load on local construction/repair before heading home, keeping a 75% reserve so they always carry energy back (the reserve prevents a maintain→empty→harvest cycle that would trap them in the remote room) |
 | `worker` | Refills base energy, repairs structures and ramparts, builds construction sites; falls back to upgrading the controller. Eligibility flags in `memory.eligibility` (`base`, `repair`, `ramparts`, `build`) gate which subtasks the creep will pick up |
 | `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs) |
 | `transporter2` | Variant transporter that prioritizes resources currently in its store |
