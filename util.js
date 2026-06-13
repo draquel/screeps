@@ -519,7 +519,13 @@ var util = {
    runTest(creepName){
     // Paste into Screeps console, replace name
     let creep = Game.creeps[creepName];
-    let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
+    let room = creep.room 
+        if(typeof room === 'string'){
+            if(Object.keys(Game.rooms).includes(room)){
+                room = Game.rooms[room]
+            }
+        }
+    let roomMineral = room.mineral ? room.mineral.mineralType : null;
     let work = require('./creeps.work');
 
     console.log('=== MINERAL TRANSPORTER DEBUG ===');
@@ -529,7 +535,7 @@ var util = {
     console.log('memory:', JSON.stringify(creep.memory));
 
     // P1: lab drain
-    let labs = creep.room.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_LAB});
+    let labs = room.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_LAB});
     console.log('--- P1 Lab Drain ---');
     labs.forEach(l => {
         let assigned = l.memory.resource;
@@ -548,11 +554,11 @@ var util = {
 
     // P3: room mineral terminal top up
     console.log('--- P3 Terminal Top Up ---');
-    let terminal = creep.room.terminal;
+    let terminal = room.terminal;
     let terminalHeld = terminal ? (terminal.store[roomMineral] || 0) : 0;
-    let terminalCap = creep.room.memory.mineralTerminalCap || 25000;
-    let hasInStorage = creep.room.storage && (creep.room.storage.store[roomMineral] || 0) > 0;
-    let containers = creep.room.find(FIND_STRUCTURES, {filter: s => s.structureType === STRUCTURE_CONTAINER});
+    let terminalCap = room.memory.mineralTerminalCap || 25000;
+    let hasInStorage = room.storage && (room.storage.store[roomMineral] || 0) > 0;
+    let containers = room.find(FIND_STRUCTURES, {filter: s => s.structureType === STRUCTURE_CONTAINER});
     let hasInContainers = containers.some(s => (s.store[roomMineral] || 0) > 0);
     console.log('terminalHeld:', terminalHeld, '/ cap:', terminalCap, '/ needs top up:', terminalHeld < terminalCap);
     console.log('hasInStorage:', hasInStorage, 'hasInContainers:', hasInContainers);
@@ -560,27 +566,27 @@ var util = {
 
     // P4: foreign mineral management
     console.log('--- P4 Foreign Minerals ---');
-    if (terminal && creep.room.storage) {
-        let foreignSellThreshold = creep.room.memory.foreignMineralSellThreshold || 10000;
-        let foreignSellBuffer = creep.room.memory.foreignMineralSellBuffer || 2000;
+    if (terminal && room.storage) {
+        let foreignSellThreshold = room.memory.foreignMineralSellThreshold || 10000;
+        let foreignSellBuffer = room.memory.foreignMineralSellBuffer || 2000;
         Object.keys(terminal.store).forEach(r => {
             if (r === RESOURCE_ENERGY || r === roomMineral) return;
             let tAmt = terminal.store[r] || 0;
-            let sAmt = creep.room.storage.store[r] || 0;
+            let sAmt = room.storage.store[r] || 0;
             console.log(r+': terminal='+tAmt+' storage='+sAmt+' combined='+(tAmt+sAmt)+' threshold='+foreignSellThreshold+' inbound eligible:'+(tAmt > 0 && (tAmt+sAmt) <= foreignSellThreshold));
         });
-        Object.keys(creep.room.storage.store).forEach(r => {
+        Object.keys(room.storage.store).forEach(r => {
             if (r === RESOURCE_ENERGY || r === roomMineral) return;
             let tAmt = terminal ? (terminal.store[r] || 0) : 0;
-            let sAmt = creep.room.storage.store[r] || 0;
+            let sAmt = room.storage.store[r] || 0;
             console.log(r+': storage='+sAmt+' terminal='+tAmt+' combined='+(tAmt+sAmt)+' excess eligible:'+((tAmt+sAmt) > foreignSellThreshold+foreignSellBuffer));
         });
     }
 
     // P5: loose minerals
     console.log('--- P5 Loose Minerals ---');
-    let drops = creep.room.find(FIND_DROPPED_RESOURCES, {filter: d => d.resourceType !== RESOURCE_ENERGY && d.resourceType !== roomMineral});
-    let tombs = creep.room.find(FIND_TOMBSTONES, {filter: t => Object.keys(t.store).some(r => r !== RESOURCE_ENERGY && r !== roomMineral && t.store[r] > 0)});
+    let drops = room.find(FIND_DROPPED_RESOURCES, {filter: d => d.resourceType !== RESOURCE_ENERGY && d.resourceType !== roomMineral});
+    let tombs = room.find(FIND_TOMBSTONES, {filter: t => Object.keys(t.store).some(r => r !== RESOURCE_ENERGY && r !== roomMineral && t.store[r] > 0)});
     console.log('drops:', drops.length, 'tombs:', tombs.length);
 
     // collectResource target check

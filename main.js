@@ -10,7 +10,6 @@ module.exports.loop = function () {
     Game.util = require('./util');
     Game.cmd = require('./cmd');
 
-
   //Apply prototypes
     proto.load();
     traffic.install();
