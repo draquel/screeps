@@ -695,6 +695,16 @@ module.exports = {
   },
 
   runMineralTransporter(creep) {
+    // This role operates entirely within its home room (storage/terminal/labs/
+    // factory/mineral). If it gets displaced into another room — e.g. shoved
+    // across an exit by the traffic resolver, or manually relocated — travel
+    // back rather than idling and running in-room logic against foreign
+    // (possibly mineral-less) rooms.
+    if (!this.inHomeRoom(creep)) {
+        this.moveToHome(creep);
+        return;
+    }
+
     if (creep.memory.working && creep.store.getUsedCapacity() === 0) {
         creep.memory.working = false;
         creep.memory.targetDeposit = null;

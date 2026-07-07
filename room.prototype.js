@@ -25,9 +25,9 @@ module.exports = {
         Object.defineProperty(Room.prototype, 'mineral', {
             get: function () {
                 if (!this._mineral) {
-                    if (!this.memory.mineral) {
+                    if (this.memory.mineral === undefined) {
                         let result = this.find(FIND_MINERALS)
-                        this.memory.mineral = result != null ? result[0].id : null
+                        this.memory.mineral = result.length ? result[0].id : null
                     }
                     this._mineral = this.memory.mineral != null ? Game.getObjectById(this.memory.mineral) : null;
                 }
