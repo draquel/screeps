@@ -41,6 +41,9 @@ module.exports = {
       case "mineralMiner":
         res = this.initMineralMiner(room, memory);
         break;
+      case "harvester":
+        res = this.initHarvester(memory);
+        break;
       default:
         res = memory;
         break;
@@ -139,6 +142,19 @@ module.exports = {
       storages: true,
       links: true,
     };
+    return memory;
+  },
+
+  initHarvester(memory) {
+    // Repair participation is opt-out: default the flag on, but honor an explicit
+    // value passed via the spawn memory so a batch of harvesters can be queued
+    // with repair disabled. Gating repairs keeps them from diverting energy that
+    // would otherwise flow into the room.
+    if (memory.eligibility === undefined) {
+      memory.eligibility = {
+        repair: true,
+      };
+    }
     return memory;
   },
 
@@ -288,6 +304,13 @@ module.exports = {
         ? RESOURCE_ENERGY
         : creep.memory.targetResource;
 
+    // Existing harvesters spawned before the eligibility flag existed have no
+    // eligibility object; treat them as participating so behavior is unchanged
+    // until they respawn. Only an explicit false opts a harvester out of repairs.
+    const repairEligible =
+      creep.memory.eligibility === undefined ||
+      creep.memory.eligibility.repair !== false;
+
     if (creep.memory.working) {
       if (creep.memory.targetRoom != null && !this.inTargetRoom(creep)) {
         this.moveToRoom(creep);
@@ -321,7 +344,7 @@ module.exports = {
           if (work.buildConstructionSites(creep)) {
             return;
           }
-          if (work.maintainBaseStructures(creep)) {
+          if (repairEligible && work.maintainBaseStructures(creep)) {
             return;
           }
         }
@@ -349,9 +372,9 @@ module.exports = {
       if(work.depositResources(creep, depositGroupB, resource)){
         return;
       }
-      if (work.maintainBaseStructures(creep)) {
+      if (repairEligible && work.maintainBaseStructures(creep)) {
         return;
-      }  
+      }
       if (work.buildConstructionSites(creep)) {
         return;
       }

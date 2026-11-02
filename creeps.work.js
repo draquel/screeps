@@ -98,7 +98,7 @@ module.exports =  {
     },
 
     workerUpgrade(creep){
-        if(creep.room.controller.level < 8) {
+        if(creep.room.controller.level < 8 || (creep.room.controller.level == 8 && creep.room.controller.ticksToDowngrade < 75000)) {
             if(creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE){
                 util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ff0000'},creep.room.controller)
             }
