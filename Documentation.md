@@ -178,7 +178,7 @@ Low-level worker action functions used by creep roles.
 | `workerRepair(creep, target)` | Repair a structure; moves to target if not in range |
 | `workerBuild(creep, target)` | Build a construction site; moves to target if not in range |
 | `workerWidthdraw(creep, target, resource)` | Withdraw resource from a structure; moves to target if not in range |
-| `workerTransfer(creep, target, resource)` | Transfer resource to a structure; moves to target if not in range |
+| `workerTransfer(creep, target, resource)` | Transfer resource to a structure; moves to target if not in range. Clears `memory.targetDeposit` on a successful transfer (or when the target is full/invalid) so the next deposit re-picks |
 | `workerPickup(creep, target)` | Pick up a dropped resource; moves to target if not in range |
 | `workerUpgrade(creep)` | Upgrade the room controller (only if controller level < 8) |
 | `getBuildTarget(creep)` | Find the closest construction site for the creep |
@@ -195,7 +195,7 @@ Low-level worker action functions used by creep roles.
 
 | Function | Description |
 |----------|-------------|
-| `getDepositTarget(creep, options, resource)` | Find a deposit target. Energy prioritizes: spawns/extensions > towers > labs > links/terminals/factories/storages/containers. With `options.pool`, the tiers are dropped and spawns/extensions/towers plus the enabled sinks are pooled into one closest-by-path pick. Returns the structure; `depositResources` records it in `memory.targetDeposit` and does the transfer. Non-energy goes to terminal/factory/storage/containers/labs. |
+| `getDepositTarget(creep, options, resource)` | Find a deposit target. Energy prioritizes: spawns/extensions > towers > labs > links/terminals/factories/storages/containers. Towers qualify below 75% energy and unclaimed by another creep; the emptiest is chosen, range breaks ties. With `options.pool`, the tiers are dropped and spawns/extensions/towers plus the enabled sinks are pooled into one closest-by-path pick. Returns the structure; `depositResources` records it in `memory.targetDeposit` and does the transfer. Non-energy goes to terminal/factory/storage/containers/labs. |
 | `depositResources(creep, options, resource)` | High-level deposit: uses cached target or finds a new one |
 | `refillBaseEnergy(creep, options)` | Wrapper around `depositResources` for refilling base energy |
 

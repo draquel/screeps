@@ -74,7 +74,13 @@ module.exports =  {
 
     workerTransfer(creep,target,resource = RESOURCE_ENERGY){
         let result = creep.transfer(target,resource)
-        if(result === ERR_NOT_IN_RANGE) {
+        if(result === OK) {
+            // A transfer moves min(carried, target free space), so the target is now
+            // full or the creep is empty either way: release the claim so the next
+            // deposit re-picks. Keeping it made the creep trickle a few energy per
+            // tick into an actively firing tower that never quite reaches full.
+            creep.memory.targetDeposit = null;
+        }else if(result === ERR_NOT_IN_RANGE) {
             util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#fff000'},target)
         }else if(result === ERR_INVALID_TARGET || target.store.getFreeCapacity(resource) === 0){
             creep.memory.targetDeposit = null;
@@ -299,7 +305,7 @@ if(options.containers){
                     if((s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) && !taken.includes(s.id)){
                         return s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
                     }
-                    if(s.structureType === STRUCTURE_TOWER){
+                    if(s.structureType === STRUCTURE_TOWER && !taken.includes(s.id)){
                         return s.store.getFreeCapacity(RESOURCE_ENERGY) > s.store.getCapacity(RESOURCE_ENERGY) * 0.25
                     }
                     if(options.links && s.structureType === STRUCTURE_LINK && s.id !== creep.room.memory.targetLink){
@@ -317,7 +323,15 @@ if(options.containers){
                 }
             });
             if (target == null) {
-                target = creep.pos.findClosestByPath(FIND_STRUCTURES,{filter: (s) => { return s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(RESOURCE_ENERGY) > s.store.getCapacity(RESOURCE_ENERGY) * 0.25 }})
+                // Serve the emptiest tower that needs energy (below 75%) and isn't
+                // already claimed by another creep; distance only breaks ties. Picking
+                // the closest instead lets one tower near the storage monopolize
+                // deliveries while the others drain.
+                let towers = creep.room.find(FIND_STRUCTURES, {filter: (s) => {
+                    return s.structureType === STRUCTURE_TOWER && !taken.includes(s.id) && s.store.getFreeCapacity(RESOURCE_ENERGY) > s.store.getCapacity(RESOURCE_ENERGY) * 0.25
+                }})
+                towers.sort((a, b) => (a.store[RESOURCE_ENERGY] - b.store[RESOURCE_ENERGY]) || (creep.pos.getRangeTo(a) - creep.pos.getRangeTo(b)))
+                target = towers.length ? towers[0] : null
             }
 
             if (target == null) {
