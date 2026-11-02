@@ -99,9 +99,21 @@ module.exports = {
         let targetLink = Game.getObjectById(room.memory.targetLink);
         let links = room.find(FIND_MY_STRUCTURES,{filter:(s) => s.structureType === STRUCTURE_LINK})
         if(targetLink){
+            // Send once a link is nearly full rather than exactly full: partial
+            // top-ups (e.g. a harvester arriving with an odd remainder) can leave a
+            // sender at 799/800, and an exact-full check would strand it forever.
+            const SEND_THRESHOLD = LINK_CAPACITY * 0.9
+            const MIN_SEND = 100
             for(let i = 0; i < links.length; i++){
-                if(links[i].store.getFreeCapacity(RESOURCE_ENERGY) === 0){
-                    links[i].transferEnergy(targetLink)
+                let link = links[i]
+                if(link.id === targetLink.id || link.cooldown > 0){ continue }
+                if(link.store.getUsedCapacity(RESOURCE_ENERGY) < SEND_THRESHOLD){ continue }
+                // Cap to the receiver's free space so a nearly-full targetLink takes a
+                // partial send instead of rejecting with ERR_FULL; skip tiny sends
+                // that would burn the cooldown for little energy.
+                let amount = Math.min(link.store.getUsedCapacity(RESOURCE_ENERGY), targetLink.store.getFreeCapacity(RESOURCE_ENERGY))
+                if(amount >= MIN_SEND){
+                    link.transferEnergy(targetLink, amount)
                 }
             }
         }

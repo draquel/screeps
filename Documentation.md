@@ -246,7 +246,7 @@ Room management module. Handles per-room operations each tick.
 **Structures:**
 
 - `runTowers(room)` - Towers auto-target: hostile creeps > damaged friendly creeps > damaged structures (< 75% health)
-- `runLinks(room)` - Full links transfer energy to the designated `targetLink`
+- `runLinks(room)` - Sender links at >=90% of `LINK_CAPACITY` (off cooldown) transfer to the designated `targetLink`, capped to its free space; sends under 100 are skipped
 - `runFactory(room)` - Placeholder (not yet implemented)
 
 **Mining:**
