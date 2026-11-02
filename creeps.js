@@ -351,26 +351,63 @@ module.exports = {
         this.moveToHome(creep);
         return;
       }
-      let depositGroupA = {
-            factory: true,
-            terminal: true,
-            links: false,
-            storages: false,
-            containers: false,
-      };
-      let depositGroupB = {
-            terminal: false,
-            links: true,
-            labs: false,
-            storages: true,
-            containers: false,
-      };
+      // With a base refiller in the room keeping spawns/extensions topped up,
+      // unload at the nearest sink so the energy enters the room economy as fast
+      // as possible. Without one, keep the tiered order so the harvester itself
+      // refills spawns/extensions before anything else. Refillers are
+      // base-eligible workers and energy transporters (both deliver through
+      // depositResources, which serves spawns/extensions first); a transporter
+      // assigned to a mineral never touches spawns, so it doesn't count.
+      const baseRefillerPresent =
+        creep.room.find(FIND_MY_CREEPS, {
+          filter: (c) =>
+            (c.memory.role === "worker" &&
+              c.memory.eligibility &&
+              c.memory.eligibility.base) ||
+            ((c.memory.role === "transporter" ||
+              c.memory.role === "transporter2") &&
+              this.getTargetResource(c) === RESOURCE_ENERGY),
+        }).length > 0;
 
-      if (work.depositResources(creep, depositGroupA, resource)) {
-        return;
-      }
-      if(work.depositResources(creep, depositGroupB, resource)){
-        return;
+      if (baseRefillerPresent) {
+        if (
+          work.depositResources(
+            creep,
+            {
+              pool: true,
+              links: true,
+              storages: true,
+              terminal: true,
+              factory: true,
+              containers: false,
+            },
+            resource,
+          )
+        ) {
+          return;
+        }
+      } else {
+        let depositGroupA = {
+          factory: true,
+          terminal: true,
+          links: false,
+          storages: false,
+          containers: false,
+        };
+        let depositGroupB = {
+          terminal: false,
+          links: true,
+          labs: false,
+          storages: true,
+          containers: false,
+        };
+
+        if (work.depositResources(creep, depositGroupA, resource)) {
+          return;
+        }
+        if (work.depositResources(creep, depositGroupB, resource)) {
+          return;
+        }
       }
       if (repairEligible && work.maintainBaseStructures(creep)) {
         return;

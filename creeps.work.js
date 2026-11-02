@@ -288,7 +288,27 @@ if(options.containers){
     getDepositTarget(creep, options = {factory:false,terminal:false,storages:false,containers:false,links:false,labs:false}, resource = RESOURCE_ENERGY){
         let targetList = []
         let target
-        if(resource === RESOURCE_ENERGY) {
+        if(resource === RESOURCE_ENERGY && options.pool) {
+            // Pooled mode: no tiered priority. Spawns/extensions/towers compete on
+            // distance with whichever sinks the options enable, so the creep unloads
+            // at the nearest place that accepts energy. Only safe when something else
+            // (a base-eligible worker) is responsible for refilling spawns/extensions.
+            let taken = util.getCreepProp(creep.room.find(FIND_MY_CREEPS),'targetDeposit');
+            targetList.push(...creep.room.find(FIND_STRUCTURES, {
+                filter: (s) => {
+                    if((s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) && !taken.includes(s.id)){
+                        return s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    }
+                    if(s.structureType === STRUCTURE_TOWER){
+                        return s.store.getFreeCapacity(RESOURCE_ENERGY) > s.store.getCapacity(RESOURCE_ENERGY) * 0.25
+                    }
+                    if(options.links && s.structureType === STRUCTURE_LINK && s.id !== creep.room.memory.targetLink){
+                        return s.store.getFreeCapacity(RESOURCE_ENERGY) > 0
+                    }
+                    return false
+                }
+            }));
+        } else if(resource === RESOURCE_ENERGY) {
             let taken = util.getCreepProp(creep.room.find(FIND_MY_CREEPS),'targetDeposit');
             target = creep.pos.findClosestByPath(FIND_STRUCTURES, {
                 algorithm: "astar",
@@ -304,10 +324,12 @@ if(options.containers){
                 target = creep.pos.findClosestByPath(FIND_STRUCTURES,{filter: (s) => { return s.structureType === STRUCTURE_LAB && s.store.getFreeCapacity(RESOURCE_ENERGY) > 0 }})
             }
 
+            // Return the structure itself; depositResources records it in memory and
+            // performs the transfer. (Previously this transferred here and returned
+            // `true`, which made depositResources store `true.id` and wipe the
+            // claim every tick.)
             if (target != null) {
-                creep.memory.targetDeposit = target.id
-                this.workerTransfer(creep, target)
-                return true
+                return target
             }
 
             if(options.links) {
