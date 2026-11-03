@@ -19,7 +19,8 @@
 //
 // Tunables live in DEFAULTS and can be overridden at runtime via
 // Memory.logistics.config (empire) and Memory.logistics.rooms[name] (per room).
-// Room memory is not used because rooms.initMem rebuilds it every tick.
+// Per-room settings live under Memory.logistics (not room.memory) so all
+// logistics tuning is in one place.
 
 const BASE_MINERALS = [RESOURCE_HYDROGEN, RESOURCE_OXYGEN, RESOURCE_UTRIUM, RESOURCE_LEMERGIUM,
     RESOURCE_KEANIUM, RESOURCE_ZYNTHIUM, RESOURCE_CATALYST];

@@ -8,22 +8,37 @@ module.exports = {
         return util.getRoomByName(name)
     },
 
+    // Fills in missing room memory defaults in place. It used to rebuild
+    // room.memory from a whitelist every tick, which silently dropped every
+    // other key — including the Room prototype caches (sourceIds, mineral,
+    // factoryId), forcing a fresh find() for each of them every tick.
     initMem(room){
-        if(typeof room.memory.showPath === "undefined"){
+        let mem = room.memory;
+        if(mem.showPath === undefined){
             console.log('['+room.name+'] Memory: Initializing Room Memory')
         }
-        room.memory = {
-            terminalResources:room.memory.terminalResources === undefined ? [RESOURCE_ENERGY] : room.memory.terminalResources,
-            reusePath:room.memory.reusePath === undefined ? 1 : room.memory.reusePath,
-            showPath:room.memory.showPath === undefined ? false : room.memory.showPath,
-            targetLink:room.memory.targetLink === undefined ? null : room.memory.targetLink,
-            spawning:room.memory.spawning === undefined ? [] : room.memory.spawning,
-            spawnQueue:room.memory.spawnQueue === undefined ? [] : room.memory.spawnQueue,
-            defenseMin:room.memory.defenseMin === undefined ? 20000 : room.memory.defenseMin,
-            reservations:room.memory.reservations === undefined ? [] : room.memory.reservations,
-            storageId: room.memory.storageId !== undefined ? room.memory.storageId : (room.storage ? room.storage.id : null),
-            terminalId: room.memory.terminalId !== undefined ? room.memory.terminalId : (room.terminal ? room.terminal.id : null),
-            allowMining: room.memory.allowMining !== undefined ? room.memory.allowMining : true,
+        const defaults = {
+            terminalResources: () => [RESOURCE_ENERGY],
+            reusePath: () => 1,
+            showPath: () => false,
+            targetLink: () => null,
+            spawning: () => [],
+            spawnQueue: () => [],
+            defenseMin: () => 20000,
+            reservations: () => [],
+            allowMining: () => true,
+        };
+        for(let key in defaults){
+            if(mem[key] === undefined) mem[key] = defaults[key]();
+        }
+        // One-time cleanup of keys nothing reads any more (old terminal push
+        // model thresholds, unused structure ids, a stray prototype setter key).
+        if(!mem._memV || mem._memV < 2){
+            for(let key of ['mineralTerminalCap', 'mineralSellThreshold', 'foreignMineralSellThreshold',
+                'foreignMineralSellBuffer', 'terminalEnergyReserve', 'storageId', 'terminalId', 'sources']){
+                delete mem[key];
+            }
+            mem._memV = 2;
         }
     },
 

@@ -15,7 +15,7 @@ module.exports = {
                 return this._sources;
             },
             set: function (newValue) {
-                this.memory.sources = newValue.map(source => source.id);
+                this.memory.sourceIds = newValue.map(source => source.id);
                 this._sources = newValue;
             },
             enumerable: false,
@@ -44,11 +44,15 @@ module.exports = {
         Object.defineProperty(Room.prototype, 'factory', {
             get: function () {
                 if (!this._factory) {
-                    if (this.memory.factoryId === undefined) {
+                    // A cached "no factory" (null) is rechecked every 100 ticks so a
+                    // newly built factory is picked up; a cached id whose structure
+                    // is gone is cleared and rechecked next access.
+                    if (this.memory.factoryId === undefined || (this.memory.factoryId === null && Game.time % 100 === 0)) {
                         let result = this.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_FACTORY});
                         this.memory.factoryId = result.length ? result[0].id : null;
                     }
                     this._factory = this.memory.factoryId != null ? Game.getObjectById(this.memory.factoryId) : null;
+                    if (this.memory.factoryId != null && !this._factory) delete this.memory.factoryId;
                 }
                 return this._factory;
             },

@@ -237,16 +237,19 @@ Room management module. Handles per-room operations each tick.
 4. Runs tower logic
 5. Runs link logic
 
-**Room Memory (`initMem`):**
+**Room Memory (`initMem`):** fills in missing defaults in place each tick; other keys are preserved (including the Room prototype caches `sourceIds`, `mineral`, `factoryId` — a cached `null` factory is rechecked every 100 ticks). A one-time migration (`_memV: 2`) removes keys from the old terminal push model.
 
 | Property | Default | Description |
 |----------|---------|-------------|
 | `terminalResources` | `[RESOURCE_ENERGY]` | Resources managed by the terminal |
-| `reusePath` | `4` | Path reuse setting for movement |
+| `reusePath` | `1` | Path reuse setting for movement |
 | `showPath` | `false` | Whether to visualize creep paths |
 | `targetLink` | `null` | ID of the receiving link for energy transfers |
 | `spawning` | `[]` | Currently spawning creeps |
 | `spawnQueue` | `[]` | Queued creeps waiting to spawn |
+| `defenseMin` | `20000` | Towers repair walls/ramparts below this |
+| `reservations` | `[]` | Controller ids this room keeps reserved |
+| `allowMining` | `true` | Enables the automatic mineral mining crew |
 
 **Structures:**
 
@@ -312,8 +315,6 @@ Empire-wide, demand-driven resource sharing. Replaces the old push model where e
 | `Memory.logistics.rooms[name].export` | `false` stops the room offering non-energy surplus |
 | `Memory.logistics.rooms[name].wants` | `{resource: amount}` standing demand (use `cmd.want`) |
 | `Memory.logistics.history` | Ring buffer of the last 30 sends/sells (shown by `cmd.logistics()`) |
-
-Per-room settings are not kept in `room.memory` because `rooms.initMem` rebuilds it every tick and drops unknown keys.
 
 ### market.js
 
