@@ -48,6 +48,53 @@ module.exports = {
     },
     runTest(creep){ util.runTest(creep) },
 
+    // Send energy between two of my rooms' terminals. Pass amount = null to send
+    // the most the source terminal can afford after the transfer cost. Validates
+    // up front and logs a readable reason instead of a bare error code.
+    // Usage: cmd.sendEnergy('E19S59', 'E17S67', 20000)
+    sendEnergy(from, to, amount = null) {
+      const tag = 'cmd.sendEnergy '+from+' -> '+to+': '
+      const src = Game.rooms[from]
+      const dst = Game.rooms[to]
+      if(!src || !src.controller || !src.controller.my){ console.log(tag+from+' is not a room I own/see'); return ERR_INVALID_ARGS }
+      if(!dst || !dst.controller || !dst.controller.my){ console.log(tag+to+' is not a room I own/see'); return ERR_INVALID_ARGS }
+      if(from === to){ console.log(tag+'source and destination are the same'); return ERR_INVALID_ARGS }
+      if(!src.terminal){ console.log(tag+from+' has no terminal'); return ERR_INVALID_TARGET }
+      if(!dst.terminal){ console.log(tag+to+' has no terminal'); return ERR_INVALID_TARGET }
+      if(src.terminal.cooldown > 0){ console.log(tag+'terminal on cooldown for '+src.terminal.cooldown+' more ticks'); return ERR_TIRED }
+
+      const available = src.terminal.store[RESOURCE_ENERGY] || 0
+      // Largest amount where amount + cost fits in the terminal's energy.
+      const maxSendable = () => {
+        const rate = Game.market.calcTransactionCost(1000, from, to) / 1000
+        let n = Math.floor(available / (1 + rate))
+        while(n > 0 && n + Game.market.calcTransactionCost(n, from, to) > available){ n-- }
+        return n
+      }
+
+      if(amount == null){ amount = maxSendable() }
+      if(!(amount > 0)){ console.log(tag+'nothing to send ('+available+' energy in terminal)'); return ERR_NOT_ENOUGH_RESOURCES }
+
+      const cost = Game.market.calcTransactionCost(amount, from, to)
+      if(amount + cost > available){
+        console.log(tag+'need '+(amount + cost)+' ('+amount+' + '+cost+' cost) but terminal has '+available+'; max sendable is '+maxSendable()+' (pass null to send that)')
+        return ERR_NOT_ENOUGH_RESOURCES
+      }
+      const dstFree = dst.terminal.store.getFreeCapacity(RESOURCE_ENERGY)
+      if(dstFree < amount){
+        console.log(tag+to+' terminal only has '+dstFree+' free for '+amount)
+        return ERR_FULL
+      }
+
+      const result = src.terminal.send(RESOURCE_ENERGY, amount, to)
+      if(result === OK){
+        console.log(tag+'sent '+amount+' energy (cost '+cost+', '+(available - amount - cost)+' left in '+from+' terminal)')
+      }else{
+        console.log(tag+'send failed with code '+result)
+      }
+      return result
+    },
+
     // Intel helpers — manipulate Memory.intel.rooms for hostile-room avoidance.
     // See Documentation.md "Movement Architecture" for the schema and which
     // fields are safe to set manually vs. overwritten by intel.update().

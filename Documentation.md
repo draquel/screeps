@@ -88,6 +88,7 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | Function | Description |
 |----------|-------------|
 | `sellResources(room, resource, amount)` | Sell from terminal; defaults to the room's native mineral if `resource` is null |
+| `sendEnergy(from, to, amount)` | Send energy between two owned rooms' terminals. Validates terminals/cooldown/destination space and checks `amount` + transfer cost against the source terminal; `amount = null` sends the max affordable. Logs the outcome and returns the result code |
 | `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
 
 **Intel (`Memory.intel.rooms`):**
