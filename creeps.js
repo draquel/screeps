@@ -829,6 +829,7 @@ module.exports = {
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
         creep.memory.powerSpawnFeed = null;
+        creep.memory.nukerFeed = null;
         creep.say("🛻 Load");
     }
     if (!creep.memory.working && creep.store.getFreeCapacity() === 0) {
@@ -878,6 +879,17 @@ module.exports = {
             }
         }
         creep.memory.powerSpawnFeed = null;
+
+        // Priority 2c: nuker feed (G or energy)
+        let nukerFeed = creep.memory.nukerFeed;
+        if (nukerFeed && carried.includes(nukerFeed)) {
+            let nuker = this.getNuker(creep.room);
+            if (nuker && nuker.store.getFreeCapacity(nukerFeed) > 0) {
+                work.workerTransfer(creep, nuker, nukerFeed);
+                return;
+            }
+        }
+        creep.memory.nukerFeed = null;
 
         // Priority 3: lab fill resource goes to lab if still needed
         let labResource = carried.find(r => this.getRoomLabResource(creep.room, r) != null);
@@ -939,6 +951,7 @@ module.exports = {
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
         creep.memory.powerSpawnFeed = null;
+        creep.memory.nukerFeed = null;
 
         // Priority 1: drain labs with wrong or unassigned contents
         let drainTarget = this.getLabDrainTarget(creep);
@@ -1051,6 +1064,20 @@ module.exports = {
             return;
         }
 
+        // Priority 9 (lowest): load the nuker (see getNukerNeed)
+        let nukerNeed = this.getNukerNeed(creep.room);
+        if (nukerNeed) {
+            creep.memory.nukerFeed = nukerNeed.resource;
+            let amount = Math.min(creep.store.getFreeCapacity(), nukerNeed.amount, nukerNeed.source.store[nukerNeed.resource] || 0);
+            let r = creep.withdraw(nukerNeed.source, nukerNeed.resource, amount);
+            if (r === ERR_NOT_IN_RANGE) {
+                util.moveToTarget(creep, { pathColor: '#ff00ff' }, nukerNeed.source);
+            } else if (r === OK) {
+                creep.memory.working = true;
+            }
+            return;
+        }
+
         // No collect target found - if we're already carrying something, deliver it
         if (creep.store.getUsedCapacity() > 0) {
             creep.memory.working = true;
@@ -1058,6 +1085,36 @@ module.exports = {
             creep.say("🚚 Deliver");
         }
     }
+},
+
+getNuker(room) {
+    if (room._nuker === undefined) {
+        room._nuker = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_NUKER })[0] || null;
+    }
+    return room._nuker;
+},
+
+// Nuker top-up: G from terminal/storage when logistics allows nukers to take
+// G (nukerPriority), then energy from storage while the room's effective
+// energy is above nukerEnergyFloor. Returns { resource, source, amount }.
+getNukerNeed(room) {
+    let nuker = this.getNuker(room);
+    if (!nuker || !room.storage) return null;
+    let cfg = logistics.config();
+    let gFree = nuker.store.getFreeCapacity(RESOURCE_GHODIUM) || 0;
+    if (gFree > 0 && logistics.nukerGhodiumAllowed()) {
+        let inTerminal = room.terminal ? room.terminal.store[RESOURCE_GHODIUM] || 0 : 0;
+        let inStorage = room.storage.store[RESOURCE_GHODIUM] || 0;
+        if (inTerminal + inStorage > 0) {
+            return { resource: RESOURCE_GHODIUM, source: inTerminal > 0 ? room.terminal : room.storage, amount: gFree };
+        }
+    }
+    let eFree = nuker.store.getFreeCapacity(RESOURCE_ENERGY) || 0;
+    if (eFree > 0 && logistics.effectiveEnergy(room) > cfg.nukerEnergyFloor
+        && room.storage.store[RESOURCE_ENERGY] > 0) {
+        return { resource: RESOURCE_ENERGY, source: room.storage, amount: eFree };
+    }
+    return null;
 },
 
 getPowerSpawn(room) {

@@ -61,6 +61,23 @@ module.exports = {
     // Tunables: Memory.power.config (overrides power.DEFAULTS, plus
     // powerEnergyFloor for power spawn processing, default 150000).
     power() { return require('./power').report() },
+    // Nuker load status per room, and whether nukers may take G right now
+    // (Memory.logistics.config.nukerPriority: 'afterGoals' | 'now').
+    nukers() {
+      const logistics = require('./logistics')
+      const cfg = logistics.config()
+      const lines = ['=== Nukers (G '+(logistics.nukerGhodiumAllowed() ? 'allowed' : 'held for production goals')+', priority '+cfg.nukerPriority+', energy floor '+cfg.nukerEnergyFloor/1000+'k) ===']
+      for(const room of Object.values(Game.rooms)){
+        if(!room.controller || !room.controller.my) continue
+        const n = room.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_NUKER})[0]
+        if(!n) continue
+        lines.push(room.name+': energy '+Math.round(n.store[RESOURCE_ENERGY]/1000)+'k/300k, G '+(n.store[RESOURCE_GHODIUM] || 0)+'/5000'
+          +(n.cooldown ? ', cooldown '+n.cooldown : '')+', room energy '+Math.round(logistics.effectiveEnergy(room)/1000)+'k')
+      }
+      if(lines.length === 1) lines.push('no nukers')
+      console.log(lines.join('\n'))
+      return OK
+    },
     // Abandon the current power operation for a bank id (crew retire).
     abortPower(bankId) {
       const p = require('./power')

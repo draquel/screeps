@@ -291,17 +291,19 @@ module.exports = {
         for(let i = 0; i < best.pairs; i++) this.queuePair(op);
     },
 
-    // Rooms holding power for their power spawn need a mineralTransporter to feed it.
+    // Rooms holding power for their power spawn, or with a nuker to load,
+    // need a mineralTransporter (it does both).
     ensurePowerHaulers(){
         if(Game.time % 100 !== 0) return;
         let util = require("./util");
+        let creeps = require("./creeps");
         for(let room of this.homes()){
             let ps = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_POWER_SPAWN })[0];
-            if(!ps) continue;
             let held = (room.storage ? room.storage.store[RESOURCE_POWER] || 0 : 0) + (room.terminal ? room.terminal.store[RESOURCE_POWER] || 0 : 0);
-            if(held < 100) continue;
+            let why = ps && held >= 100 ? "feed the power spawn" : (creeps.getNukerNeed(room) ? "load the nuker" : null);
+            if(!why) continue;
             if(!util.getCreepsByRole(room, "mineralTransporter").length){
-                console.log("[Power] "+room.name+": queuing mineralTransporter to feed the power spawn");
+                console.log("[Power] "+room.name+": queuing mineralTransporter to "+why);
                 require("./rooms").queCreep(room, "mineralTransporter", 1, { level: 4, respawn: true });
             }
         }

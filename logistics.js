@@ -33,7 +33,11 @@ const DEFAULTS = {
     terminalEnergyReserve: 10000, // terminal energy a send must leave behind
     labBuffer: 3000,        // extra held per reaction input so labs never starve
     boosterBuffer: 1000,    // extra held per booster lab compound
-    nukerGhodium: false,    // count nuker G capacity as demand
+    // Nukers (loaded by the mineralTransporter, see creeps.getNukerNeed):
+    nukerGhodium: true,     // count nuker G capacity as demand
+    nukerPriority: "afterGoals", // "afterGoals": G only once production goals need no more G
+                                 // (G is a GH/XGH2O ingredient — GCL first); "now": load right away
+    nukerEnergyFloor: 200000,    // only load nuker energy while the room is above this
     factoryBatches: 10,     // factory component demand = recipe amount x batches
     energy: {
         // Effective energy = storage + terminal energy above the terminal's
@@ -164,9 +168,7 @@ module.exports = {
             }
         }
 
-        // Off by default: nothing loads the nuker yet, so the G would sit in
-        // storage reserved, away from the GH reaction (GCL focus).
-        let nuker = cfg.nukerGhodium && room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_NUKER })[0];
+        let nuker = this.nukerGhodiumAllowed() && room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_NUKER })[0];
         if(nuker){
             let free = nuker.store.getFreeCapacity(RESOURCE_GHODIUM) || 0;
             if(free > 0) add(RESOURCE_GHODIUM, free, PRIORITY.structure);
@@ -183,6 +185,21 @@ module.exports = {
         let res = { want, inPlace };
         this._demand[room.name] = res;
         return res;
+    },
+
+    // Whether nukers may take G now. With nukerPriority "afterGoals" that's
+    // only while the production goals need no more G made. Cached 10 ticks
+    // (transporters ask every tick; requirements() sums empire stock).
+    nukerGhodiumAllowed(){
+        if(this._nukerTick !== undefined && Game.time - this._nukerTick < 10) return this._nukerOk;
+        let cfg = this.config();
+        let ok = !!cfg.nukerGhodium;
+        if(ok && cfg.nukerPriority !== "now"){
+            ok = !require("./production").requirements()[RESOURCE_GHODIUM];
+        }
+        this._nukerTick = Game.time;
+        this._nukerOk = ok;
+        return ok;
     },
 
     held(room, r){
