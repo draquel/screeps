@@ -5,6 +5,7 @@ const rooms = require('./rooms');
 const creeps = require('./creeps');
 const traffic = require('./traffic');
 const intel = require('./intel');
+const logistics = require('./logistics');
 
 module.exports.loop = function () {
     Game.util = require('./util');
@@ -25,6 +26,9 @@ module.exports.loop = function () {
     for(let name in Game.rooms){
         rooms.run(Game.rooms[name]);
     }
+
+    //Empire resource sharing (terminal sends + overflow sells), every N ticks
+    logistics.run();
 
     //Run Creep Ops
     for(let name in Game.creeps) {

@@ -12,6 +12,7 @@ A bot for the online MMO [Screeps World](https://www.screeps.com/). Code is depl
 | `creeps.work.js` | Worker action functions (harvest, build, repair, etc.) |
 | `creeps.combat.js` | Combat action functions (attack, heal, claim, etc.) |
 | `rooms.js` | Room management (towers, links, spawning, mining, labs, factory, terminal) |
+| `logistics.js` | Empire resource sharing — per-room needs/surplus ledger, terminal broker, overflow selling |
 | `market.js` | In-game market order management |
 | `util.js` | Utility functions (spawning, memory, movement facade, builds) |
 | `traffic.js` | Tier 2 traffic manager — captures move intents and shoves idle blockers |
@@ -39,8 +40,9 @@ The game loop entry point. Each tick it:
 4. Cleans up stale memory (dead creeps, abandoned rooms); every 1000 ticks also runs `intel.cleanup()`
 5. Calls `intel.update()` to refresh `Memory.intel.rooms` for visible rooms (powers the route filter)
 6. Runs room operations for each owned room
-7. Runs creep operations for each owned creep
-8. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
+7. Calls `logistics.run()` — every 10 ticks, matches room needs to surplus and sends via terminals (after room ops so queued deals are already executing)
+8. Runs creep operations for each owned creep
+9. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
 
 The ordering matters: `traffic.install` must run after `proto.load` each tick (the prototype loader can reset the wrapper), `intel.update` must run before role logic so `intel.routeCallback` has fresh data, and `traffic.resolve` must run last so it sees every intent captured during the role passes.
 
@@ -90,6 +92,8 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | `sellResources(room, resource, amount)` | Sell from terminal; defaults to the room's native mineral if `resource` is null |
 | `sendEnergy(from, to, amount)` | Send energy between two owned rooms' terminals. Validates terminals/cooldown/destination space and checks `amount` + transfer cost against the source terminal; `amount = null` sends the max affordable. Logs the outcome and returns the result code |
 | `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
+| `logistics()` | Print the logistics report: each room's energy band state, needs, surplus, empire totals vs sell caps, recent sends/sells |
+| `want(room, resource, amount)` | Set a manual standing demand (`Memory.logistics.rooms[room].wants`); `amount` 0/null removes it |
 
 **Intel (`Memory.intel.rooms`):**
 
@@ -150,7 +154,7 @@ The creep role dispatcher. Routes each creep to its role handler based on `creep
 | `worker` | Refills base energy, repairs structures and ramparts, builds construction sites; falls back to upgrading the controller. Eligibility flags in `memory.eligibility` (`base`, `repair`, `ramparts`, `build`) gate which subtasks the creep will pick up |
 | `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs). Energy transporters also drain terminal energy above 55k (surplus from inter-room sends; above the 50k top-up level so the two never fight); a load taken from the terminal is never delivered back to it (`memory.collectedFrom`) |
 | `transporter2` | Variant transporter that prioritizes resources currently in its store |
-| `mineralTransporter` | Specialized hauler for lab/factory feeds and terminal top-ups (drain/fill/share priorities; see `runMineralTransporter` in `creeps.js`) |
+| `mineralTransporter` | Specialized hauler for lab/factory feeds and storage↔terminal balancing. Collect priorities: drain wrong lab contents > fill input/booster labs > drain output labs > feed factory > drain factory > drain miner containers > balance terminal toward `logistics.terminalTarget` (`getTerminalBalanceJob`: move storage→terminal when >1000 under target, terminal→storage when >5000 over) > loose minerals. See `runMineralTransporter` in `creeps.js` |
 | `miner` | Dedicated harvester assigned to a single source; deposits into nearby links or containers. Sets `memory.noShove` while parked on its work tile |
 | `mineralMiner` | Same dispatcher as `miner` but with mineral-tuned body via `getRoleBuild` |
 | `claimer` | Moves to a target room and claims/reserves/attacks the controller |
@@ -248,7 +252,8 @@ Room management module. Handles per-room operations each tick.
 
 - `runTowers(room)` - Towers auto-target: hostile creeps > damaged friendly creeps > damaged structures (< 75% health)
 - `runLinks(room)` - Sender links at >=90% of `LINK_CAPACITY` (off cooldown) transfer to the designated `targetLink`, capped to its free space; sends under 100 are skipped
-- `runFactory(room)` - Placeholder (not yet implemented)
+- `runFactory(room)` - Produces `factory.memory.target` when components are present, up to `outputCap`
+- `runTerminal(room)` - Executes queued market deals (`terminal.memory.deals`), one per tick. All inter-room sending and selling decisions live in `logistics.js`
 
 **Mining:**
 
@@ -274,10 +279,41 @@ Room management module. Handles per-room operations each tick.
 **Utilities:**
 
 - `sellResources(room, amount)` - Sells minerals from the room's terminal on the market
+- `sellForeignResources(room, resource, amount, minPrice)` - Queues buy-order deals within the terminal's energy budget, skipping orders below `minPrice`; returns `true` if anything was queued
 - `getSources(room)` / `getMineral(room)` / `getExtractor(room)` / `getMineralContainer(room)` - Room structure lookups
 - `buildSquareBaseRoads(room, spawn)` - Builds an 8-space square road pattern around a spawn
 - `availableExtensions(room)` - Calculates how many more extensions can be built at the current RCL
 - `clearQue(room)` / `getQueueCount(room)` / `getSpawningCount(room)` / `getRespawnCount(room)` - Queue management utilities
+
+### logistics.js
+
+Empire-wide, demand-driven resource sharing. Replaces the old push model where each mining room sent its mineral to every other room up to 20k. Mining rooms now only advertise surplus; rooms that consume something post a need, and a central broker matches them. Called from `main.js` after room ops; acts every `runInterval` (10) ticks, matching the terminal cooldown. Only rooms at RCL 6+ with a terminal take part (RCL 5 rooms like E17S67 are outside the network until they get a terminal).
+
+**Ledger (per room, recomputed each pass):**
+
+- **Demand** comes from what the room consumes: input/booster labs (`lab.memory.amount`, default 2000, plus `labBuffer` 3000 held in reserve), the factory's `memory.target` recipe components × `factoryBatches` (10), nuker ghodium free capacity, 1000 power if there's a power spawn, and manual `wants`. Amounts already in the labs/factory count toward it.
+- **Need** = demand − (storage + terminal + in-place), posted when ≥ `minSend` (1000).
+- **Surplus** = storage + terminal − remaining demand. A room with no use for a resource treats all of it as surplus — that's how a mining room exports its mineral.
+- **Energy** uses bands on *effective energy* (storage + terminal energy above the 50k working level that transporters maintain as send fuel). Strong rooms (2 sources) need below 40k (fill to 60k) and donate above 120k. **Weak rooms** (fewer than 2 sources, auto-detected — currently E19S58 and E17S67) need below 80k (fill to 100k) and never donate. Below 20k a need becomes an emergency (top priority). Energy is shared for operations, not to fund upgrading elsewhere — GCL is global, so upgrading where energy is produced avoids the transfer loss.
+
+**Broker:** needs are sorted by priority (`emergency` energy < `boost` < `reaction` < `factory` < `energy` < `structure` (nuker/power) < `manual`). For each, the donor with surplus that's actually in its terminal, an off-cooldown terminal, and enough terminal energy for the cost plus a 10k reserve is chosen by shortest linear distance (cheapest transfer). One send per terminal per pass; sends up to 10k (minerals) / 20k (energy). Within a pass, scheduled sends are netted from both ledgers so two donors never fill the same need. Terminals with queued market deals are skipped.
+
+**Overflow selling:** after sends, any resource in `sellCap` whose empire total exceeds the cap (base minerals: 100k each) is sold in batches of 5k from the terminal holding the most surplus, at most `maxSellsPerPass` (1) sale per pass, respecting an optional `minPrice[resource]`. Resources not in `sellCap` (compounds, energy) are never auto-sold.
+
+**Terminal staging:** `terminalTarget(room, r)` = min(surplus, `terminalStock` 10k) for non-energy resources; the mineralTransporter balances storage↔terminal toward it, and generic transporters use it for the room mineral instead of the old 25k cap. Imports the room needs itself are left in the terminal (labs/factory pull from either) unless it's 5k+ over target.
+
+**Configuration (all optional, `Memory` so it survives deploys):**
+
+| Path | Effect |
+|---|---|
+| `Memory.logistics.config` | Deep-merged over `logistics.DEFAULTS` (e.g. `{sellCap:{H:150000}, energy:{strong:{donorFloor:150000}}, minPrice:{X:0.5}}`) |
+| `Memory.logistics.rooms[name].weak` | Force a room's weak/strong classification |
+| `Memory.logistics.rooms[name].energy` | Override that room's `low` / `target` / `donorFloor` |
+| `Memory.logistics.rooms[name].export` | `false` stops the room offering non-energy surplus |
+| `Memory.logistics.rooms[name].wants` | `{resource: amount}` standing demand (use `cmd.want`) |
+| `Memory.logistics.history` | Ring buffer of the last 30 sends/sells (shown by `cmd.logistics()`) |
+
+Per-room settings are not kept in `room.memory` because `rooms.initMem` rebuilds it every tick and drops unknown keys.
 
 ### market.js
 
@@ -472,6 +508,7 @@ util.cleanupMemory()
 intel.cleanup()        // throttled to every 1000 ticks
 intel.update()         // before role logic so routeCallback has fresh data
 rooms.run(...)
+logistics.run()        // after rooms.run (deal execution), throttled to every 10 ticks
 creeps.run(...)
 traffic.resolve()      // must be last
 ```

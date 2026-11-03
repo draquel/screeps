@@ -566,31 +566,24 @@ var util = {
     console.log('--- P3 Terminal Top Up ---');
     let terminal = room.terminal;
     let terminalHeld = terminal ? (terminal.store[roomMineral] || 0) : 0;
-    let terminalCap = room.memory.mineralTerminalCap || 25000;
+    let terminalCap = require('./logistics').terminalTarget(room, roomMineral);
     let hasInStorage = room.storage && (room.storage.store[roomMineral] || 0) > 0;
     let containers = room.find(FIND_STRUCTURES, {filter: s => s.structureType === STRUCTURE_CONTAINER});
     let hasInContainers = containers.some(s => (s.store[roomMineral] || 0) > 0);
-    console.log('terminalHeld:', terminalHeld, '/ cap:', terminalCap, '/ needs top up:', terminalHeld < terminalCap);
+    console.log('terminalHeld:', terminalHeld, '/ logistics target:', terminalCap, '/ below target:', terminalHeld < terminalCap);
     console.log('hasInStorage:', hasInStorage, 'hasInContainers:', hasInContainers);
     containers.forEach(c => console.log('container', c.id, roomMineral+':', c.store[roomMineral] || 0, 'total used:', c.store.getUsedCapacity()));
 
-    // P4: foreign mineral management
-    console.log('--- P4 Foreign Minerals ---');
+    // P4: storage <-> terminal balancing (logistics targets)
+    console.log('--- P4 Terminal Balance ---');
     if (terminal && room.storage) {
-        let foreignSellThreshold = room.memory.foreignMineralSellThreshold || 10000;
-        let foreignSellBuffer = room.memory.foreignMineralSellBuffer || 2000;
-        Object.keys(terminal.store).forEach(r => {
-            if (r === RESOURCE_ENERGY || r === roomMineral) return;
-            let tAmt = terminal.store[r] || 0;
-            let sAmt = room.storage.store[r] || 0;
-            console.log(r+': terminal='+tAmt+' storage='+sAmt+' combined='+(tAmt+sAmt)+' threshold='+foreignSellThreshold+' inbound eligible:'+(tAmt > 0 && (tAmt+sAmt) <= foreignSellThreshold));
+        let logistics = require('./logistics');
+        new Set([...Object.keys(terminal.store), ...Object.keys(room.storage.store)]).forEach(r => {
+            if (r === RESOURCE_ENERGY) return;
+            console.log(r+': terminal='+(terminal.store[r] || 0)+' storage='+(room.storage.store[r] || 0)
+                +' target='+logistics.terminalTarget(room, r)+' surplus='+logistics.surplusOf(room, r));
         });
-        Object.keys(room.storage.store).forEach(r => {
-            if (r === RESOURCE_ENERGY || r === roomMineral) return;
-            let tAmt = terminal ? (terminal.store[r] || 0) : 0;
-            let sAmt = room.storage.store[r] || 0;
-            console.log(r+': storage='+sAmt+' terminal='+tAmt+' combined='+(tAmt+sAmt)+' excess eligible:'+((tAmt+sAmt) > foreignSellThreshold+foreignSellBuffer));
-        });
+        console.log('balance job:', JSON.stringify(require('./creeps').getTerminalBalanceJob(room)));
     }
 
     // P5: loose minerals

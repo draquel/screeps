@@ -1,5 +1,6 @@
 /* eslint-disable no-undef */
 const util = require("./util");
+const logistics = require("./logistics");
 
 module.exports =  {
 
@@ -187,7 +188,7 @@ if(options.containers){
                     ? used > 0
                     : (resource !== RESOURCE_ENERGY && resource !== roomMineral && used > 0) ||
                       (resource === RESOURCE_ENERGY && used > (options.terminalEnergyFloor != null ? options.terminalEnergyFloor : 11000)) ||
-                      (resource === roomMineral && used > 26000);
+                      (resource === roomMineral && used > logistics.terminalTarget(creep.room, roomMineral) + 5000);
                 if(shouldCollect){
                     targets.push(terminal);
                 }
@@ -358,7 +359,7 @@ if(options.containers){
                 let roomMineral = creep.room.mineral ? creep.room.mineral.mineralType : null;
                 let shouldDeposit =
                     (resource === RESOURCE_ENERGY && terminal.store.getUsedCapacity(resource) < 50000 && terminal.store.getFreeCapacity(resource) > 0) ||
-                    (resource === roomMineral && terminal.store.getUsedCapacity(resource) < 25000 && terminal.store.getFreeCapacity(resource) > 0);
+                    (resource === roomMineral && terminal.store.getUsedCapacity(resource) < logistics.terminalTarget(creep.room, roomMineral) && terminal.store.getFreeCapacity(resource) > 0);
                 if(shouldDeposit){
                     targetList.push(terminal);
                 }

@@ -48,6 +48,20 @@ module.exports = {
     },
     runTest(creep){ util.runTest(creep) },
 
+    // Logistics (logistics.js): demand-driven sharing between my terminals.
+    // cmd.logistics() prints each room's energy band state, needs and surplus.
+    // Tunables: Memory.logistics.config (overrides logistics.DEFAULTS) and
+    // Memory.logistics.rooms[name] = { weak, export, wants: {res: amt}, energy: {low, target, donorFloor} }.
+    logistics() { return require('./logistics').report() },
+    want(room, resource, amount) {
+      const m = require('./logistics').mem()
+      const rc = m.rooms[room] = m.rooms[room] || {}
+      rc.wants = rc.wants || {}
+      if(!(amount > 0)){ delete rc.wants[resource] } else { rc.wants[resource] = amount }
+      console.log('logistics: '+room+' wants '+JSON.stringify(rc.wants))
+      return rc.wants
+    },
+
     // Send energy between two of my rooms' terminals. Pass amount = null to send
     // the most the source terminal can afford after the transfer cost. Validates
     // up front and logs a readable reason instead of a bare error code.

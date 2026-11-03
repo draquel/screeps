@@ -24,10 +24,6 @@ module.exports = {
             storageId: room.memory.storageId !== undefined ? room.memory.storageId : (room.storage ? room.storage.id : null),
             terminalId: room.memory.terminalId !== undefined ? room.memory.terminalId : (room.terminal ? room.terminal.id : null),
             allowMining: room.memory.allowMining !== undefined ? room.memory.allowMining : true,
-            mineralTerminalCap: room.memory.mineralTerminalCap === undefined ? 25000 : room.memory.mineralTerminalCap,
-            mineralSellThreshold: room.memory.mineralSellThreshold === undefined ? 100000 : room.memory.mineralSellThreshold,
-            foreignMineralSellThreshold: room.memory.foreignMineralSellThreshold === undefined ? 25000 : room.memory.foreignMineralSellThreshold,
-            terminalEnergyReserve: room.memory.terminalEnergyReserve === undefined ? 5000 : room.memory.terminalEnergyReserve,
         }
     },
 
@@ -119,6 +115,9 @@ module.exports = {
         }
     },
 
+  // Executes queued market deals, one per tick (each uses the terminal
+  // cooldown). Inter-room sharing and overflow selling are decided
+  // empire-wide by logistics.js, which skips terminals with pending deals.
   runTerminal(room) {
       if (!room.terminal) return;
       if (room.terminal.cooldown > 0) return;
@@ -129,141 +128,6 @@ module.exports = {
           if (order != null && order.remainingAmount >= deal.amount) {
               let result = Game.market.deal(deal.id, deal.amount, room.name);
               if (result != OK) { console.log("["+room.name+"] Deal failed: "+result); }
-          }
-          return;
-      }
-
-      if (!room.controller || room.controller.level < 6 || !room.controller.my) return;
-
-
-
-
-      let mineral = room.mineral;
-      if (!mineral) return;
-
-      let stock = room.terminal.store[mineral.mineralType] || 0;
-      let sendThreshold = 10000;
-      let sendAmount = 5000;
-      let destinationCap = 20000;
-
-      if (stock < sendThreshold) return;
-
-
-    // How much of the terminal is actually available - reserve space for energy buffer
-    let terminalEnergyReserve = room.memory.terminalEnergyReserve || 5000;
-    let terminalEnergyCurrent = room.terminal.store[RESOURCE_ENERGY] || 0;
-    let terminalEnergyDeficit = Math.max(0, terminalEnergyReserve - terminalEnergyCurrent);
-    let terminalUsableFree = Math.max(0, room.terminal.store.getFreeCapacity() - terminalEnergyDeficit);
-
-    // Early exit: if terminal has no usable space for foreign minerals, sell them off
-    if (terminalUsableFree === 0) {
-        let foreignMineral = Object.keys(room.terminal.store).find(r => {
-            if (r === RESOURCE_ENERGY) return false;
-            if (r === mineral.mineralType) return false;
-            return (room.terminal.store[r] || 0) > 0;
-        });
-        if (foreignMineral) {
-            let terminalAmount = room.terminal.store[foreignMineral];
-            let storageAmount = room.storage ? (room.storage.store[foreignMineral] || 0) : 0;
-            console.log("["+room.name+"] Terminal: No usable space - force selling "+terminalAmount+" "+foreignMineral+" to restore energy headroom (storage has "+storageAmount+" more)");
-            this.sellForeignResources(room, foreignMineral, terminalAmount);
-            return;
-        }
-    }
-
-      // Filter to rooms I actually control. Object.keys(Memory.rooms) also
-      // contains entries for rooms I've merely visited (initMem fires whenever
-      // rooms.run is called for a visible room), including foreign-owned rooms
-      // that happen to have a terminal — sending to those returns ERR_NOT_OWNER
-      // and burns log noise.
-      let myRooms = Object.keys(Memory.rooms).filter(n => {
-          let gr = Game.rooms[n];
-          return gr && gr.controller && gr.controller.my;
-      });
-      for (let i = 0; i < myRooms.length; i++) {
-          let targetName = myRooms[i];
-          if (targetName === room.name) continue;
-
-          let targetMem = Memory.rooms[targetName];
-          if (!targetMem) continue;
-
-          let targetMineral = targetMem.mineral ? Game.getObjectById(targetMem.mineral) : null;
-          if (targetMineral && targetMineral.mineralType === mineral.mineralType) continue;
-
-          let destinationHeld = 0;
-
-          let targetTerminal = targetMem.terminalId ? Game.getObjectById(targetMem.terminalId) : null;
-          if (targetTerminal) {
-              destinationHeld += targetTerminal.store[mineral.mineralType] || 0;
-              if (targetTerminal.store.getFreeCapacity() === 0) {
-                  //console.log("["+room.name+"] Terminal: "+targetName+" terminal is full, skipping");
-                  continue;
-              }
-          }else{ continue; }
-
-          let targetStorage = targetMem.storageId ? Game.getObjectById(targetMem.storageId) : null;
-          if (targetStorage) {
-              destinationHeld += targetStorage.store[mineral.mineralType] || 0;
-          }
-
-          if (destinationHeld >= destinationCap) {
-              //console.log("["+room.name+"] Terminal: "+targetName+" already holds "+destinationHeld+" "+mineral.mineralType+", skipping");
-              continue;
-          }
-
-          let cost = Game.market.calcTransactionCost(sendAmount, room.name, targetName);
-          let energyBuffer = room.terminal.store[RESOURCE_ENERGY] || 0;
-
-          if (energyBuffer < cost + terminalEnergyReserve) {
-              console.log("["+room.name+"] Terminal: Not enough energy to send to "+targetName+" (need "+(cost + terminalEnergyReserve)+", have "+energyBuffer+")");
-              return;
-          }
-
-          console.log("["+room.name+"] Terminal: Sending "+sendAmount+" "+mineral.mineralType+" to "+targetName+" (they hold "+destinationHeld+")");
-          let result = room.terminal.send(mineral.mineralType, sendAmount, targetName, "mineral share");
-          if (result !== OK) {
-              console.log("["+room.name+"] Terminal: Send failed: "+result);
-          }
-          return;
-      }
-
-      // Fallback: no rooms needed sharing, sell surplus if storage is overflowing
-      let sellThreshold = room.memory.mineralSellThreshold || 100000;
-      let storedAmount = room.storage ? (room.storage.store[mineral.mineralType] || 0) : 0;
-      if (storedAmount >= sellThreshold) {
-          console.log("["+room.name+"] Terminal: Storage has "+storedAmount+" "+mineral.mineralType+", selling surplus");
-          this.sellResources(room, sendAmount);
-      }
-
-      // Fallback 2: sell foreign minerals from terminal when combined total exceeds threshold
-      let foreignSellThreshold = room.memory.foreignMineralSellThreshold || 10000;
-      let foreignSellBuffer = room.memory.foreignMineralSellBuffer || 2000;
-
-      if (room.terminal && room.storage) {
-          let foreignMinerals = Object.keys(room.terminal.store).filter(r => {
-              if (r === RESOURCE_ENERGY) return false;
-              if (r === mineral.mineralType) return false;
-              let terminalAmount = room.terminal.store[r] || 0;
-              let storageAmount = room.storage.store[r] || 0;
-              // Only sell if combined total exceeds threshold plus buffer
-              // and there is actually something in the terminal to sell
-              return terminalAmount > 0 && (terminalAmount + storageAmount) > foreignSellThreshold + foreignSellBuffer;
-          });
-
-          if (foreignMinerals.length) {
-              let foreignMineral = foreignMinerals[0];
-              let terminalAmount = room.terminal.store[foreignMineral] || 0;
-              let storageAmount = room.storage.store[foreignMineral] || 0;
-              let combinedTotal = terminalAmount + storageAmount;
-              // Sell down to threshold, only what is in terminal right now
-              let targetTotal = foreignSellThreshold;
-              let sellAmount = Math.min(combinedTotal - targetTotal, terminalAmount);
-
-              if (sellAmount > 0) {
-                  console.log("["+room.name+"] Terminal: Selling "+sellAmount+" "+foreignMineral+" (combined: "+combinedTotal+", terminal: "+terminalAmount+", storage: "+storageAmount+")");
-                  this.sellForeignResources(room, foreignMineral, sellAmount);
-                  return;
-              }
           }
       }
   },
@@ -404,15 +268,19 @@ module.exports = {
         }
     },
 
-    sellForeignResources(room, resource, amount) {
+    // Queues market deals selling `amount` of `resource` from the room's
+    // terminal, best price first, within its terminal energy budget. Orders
+    // below `minPrice` (optional) are skipped. Returns true if anything queued.
+    sellForeignResources(room, resource, amount, minPrice = null) {
     room = this.checkRoomObj(room);
 
-    if (room.terminal == null) return;
+    if (room.terminal == null) return false;
 
     let orders = market.getBuyOrdersFor(resource, amount);
+    if (minPrice != null) orders = orders.filter(o => o.price >= minPrice);
     if (!orders.length) {
-        console.log("["+room.name+"] sellForeignResources: No buy orders found for "+resource);
-        return;
+        console.log("["+room.name+"] sellForeignResources: No buy orders found for "+resource+(minPrice != null ? " at >= "+minPrice : ""));
+        return false;
     }
 
     let left = amount;
@@ -424,7 +292,7 @@ module.exports = {
 
     if (energyAvailable <= 0) {
         console.log("["+room.name+"] sellForeignResources: Not enough energy in terminal to cover any deals (have "+(room.terminal.store[RESOURCE_ENERGY] || 0)+", reserve "+energyReserve+")");
-        return;
+        return false;
     }
 
     console.log("Selling " + amount + " " + resource + " in " + room.name + ":");
@@ -477,9 +345,10 @@ module.exports = {
 
     if (cost > 0) {
         console.log("Total Projected Earnings: $"+Math.round(total)+", Total Energy Cost: "+cost+"e");
-    } else {
-        console.log("["+room.name+"] sellForeignResources: No affordable deals scheduled for "+resource);
+        return true;
     }
+    console.log("["+room.name+"] sellForeignResources: No affordable deals scheduled for "+resource);
+    return false;
 },
     sellResources(room, amount = 10000) {
     room = this.checkRoomObj(room);

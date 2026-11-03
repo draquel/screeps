@@ -3,6 +3,7 @@
 const work = require("./creeps.work");
 const combat = require("./creeps.combat");
 const util = require("./util");
+const logistics = require("./logistics");
 
 module.exports = {
   run(creep) {
@@ -780,8 +781,8 @@ module.exports = {
     if (creep.memory.working && creep.store.getUsedCapacity() === 0) {
         creep.memory.working = false;
         creep.memory.targetDeposit = null;
-        creep.memory.foreignMoveResource = null;
-        creep.memory.foreignMoveMode = null;
+        creep.memory.terminalMoveResource = null;
+        creep.memory.terminalMoveMode = null;
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
@@ -838,42 +839,35 @@ module.exports = {
             }
         }
 
-        // Priority 4: room mineral tops up terminal to cap
-        if (roomMineral && carried.includes(roomMineral)) {
+        // Priority 4: room mineral (e.g. from the miner container) stages in
+        // the terminal up to its logistics export target, otherwise storage
+        if (roomMineral && carried.includes(roomMineral) && !creep.memory.terminalMoveResource) {
             let terminal = creep.room.terminal;
-            if (terminal) {
-                let terminalHeld = terminal.store[roomMineral] || 0;
-                let terminalCap = creep.room.memory.mineralTerminalCap || 25000;
-                if (terminalHeld < terminalCap) {
-                    if (terminal.store.getFreeCapacity() > 0) {
-                        work.workerTransfer(creep, terminal, roomMineral);
-                        return;
-                    } else {
-                        creep.memory.targetDeposit = null;
-                        console.log(creep.name+": Terminal full, holding "+roomMineral+" in storage temporarily");
-                    }
-                }
+            if (terminal && terminal.store.getFreeCapacity() > 0
+                && (terminal.store[roomMineral] || 0) < logistics.terminalTarget(creep.room, roomMineral)) {
+                work.workerTransfer(creep, terminal, roomMineral);
+                return;
             }
         }
 
-        // Priority 5: foreign mineral routes based on mode
-        let foreignMoveResource = creep.memory.foreignMoveResource;
-        let foreignMoveMode = creep.memory.foreignMoveMode;
-        if (foreignMoveResource && carried.includes(foreignMoveResource)) {
-            if (foreignMoveMode === 'toTerminal') {
+        // Priority 5: storage <-> terminal balancing job (see getTerminalBalanceJob)
+        let terminalMoveResource = creep.memory.terminalMoveResource;
+        let terminalMoveMode = creep.memory.terminalMoveMode;
+        if (terminalMoveResource && carried.includes(terminalMoveResource)) {
+            if (terminalMoveMode === 'toTerminal') {
                 let terminal = creep.room.terminal;
                 if (terminal && terminal.store.getFreeCapacity() > 0) {
-                    work.workerTransfer(creep, terminal, foreignMoveResource);
+                    work.workerTransfer(creep, terminal, terminalMoveResource);
                     return;
                 }
             } else {
                 if (creep.room.storage && creep.room.storage.store.getFreeCapacity() > 0) {
-                    work.workerTransfer(creep, creep.room.storage, foreignMoveResource);
+                    work.workerTransfer(creep, creep.room.storage, terminalMoveResource);
                     return;
                 }
             }
-            creep.memory.foreignMoveResource = null;
-            creep.memory.foreignMoveMode = null;
+            creep.memory.terminalMoveResource = null;
+            creep.memory.terminalMoveMode = null;
         }
 
         // Catch-all: anything else to storage
@@ -885,8 +879,8 @@ module.exports = {
 
     } else {
         // Always clear job flags at the start of every collect cycle
-        creep.memory.foreignMoveResource = null;
-        creep.memory.foreignMoveMode = null;
+        creep.memory.terminalMoveResource = null;
+        creep.memory.terminalMoveMode = null;
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
@@ -946,74 +940,34 @@ module.exports = {
             return;
         }
 
-        // Priority 6: drain miner containers, and top up terminal from storage when needed
+        // Priority 6: drain miner containers
         if (roomMineral) {
-            let terminal = creep.room.terminal;
-            let terminalHeld = terminal ? (terminal.store[roomMineral] || 0) : 0;
-            let terminalCap = creep.room.memory.mineralTerminalCap || 25000;
             let hasInContainers = creep.room.find(FIND_STRUCTURES, {
                 filter: s => s.structureType === STRUCTURE_CONTAINER && (s.store[roomMineral] || 0) > 0
             }).length > 0;
-            let hasInStorage = creep.room.storage && (creep.room.storage.store[roomMineral] || 0) > 0;
-            let wantFromStorage = terminalHeld < terminalCap && hasInStorage;
-            if (hasInContainers || wantFromStorage) {
+            if (hasInContainers) {
                 work.collectResource(creep, {
-                    storages: wantFromStorage, containers: hasInContainers, relaxedContainers: true,
+                    storages: false, containers: true, relaxedContainers: true,
                     terminals: false, drops: false, tombs: false, links: false, sources: false,
                 }, roomMineral);
                 return;
             }
         }
 
-        // Priority 7: manage foreign minerals
-        if (creep.room.terminal && creep.room.storage) {
-            let foreignSellThreshold = creep.room.memory.foreignMineralSellThreshold || 10000;
-            let foreignSellBuffer = creep.room.memory.foreignMineralSellBuffer || 2000;
-
-            // Build a combined picture of all foreign minerals across both terminal and storage
-            let allForeignResources = new Set([
-                ...Object.keys(creep.room.terminal.store),
-                ...Object.keys(creep.room.storage.store)
-            ].filter(r => r !== RESOURCE_ENERGY && r !== roomMineral));
-
-            // First pass: find anything over threshold + buffer - push storage portion to terminal
-            let excessForeign = Array.from(allForeignResources).find(r => {
-                let storageAmount = creep.room.storage.store[r] || 0;
-                let terminalAmount = creep.room.terminal.store[r] || 0;
-                let combined = storageAmount + terminalAmount;
-                // Only collect from storage if storage actually has some to move
-                return combined > foreignSellThreshold + foreignSellBuffer && storageAmount > 0;
-            });
-
-            if (excessForeign) {
-                creep.memory.foreignMoveResource = excessForeign;
-                creep.memory.foreignMoveMode = 'toTerminal';
-                work.collectResource(creep, {
-                    storages: true, containers: false, terminals: false,
-                    drops: false, tombs: false, links: false, sources: false,
-                }, excessForeign);
-                return;
-            }
-
-            // Second pass: find anything under threshold in terminal to move to storage
-            let inboundForeign = Array.from(allForeignResources).find(r => {
-                let terminalAmount = creep.room.terminal.store[r] || 0;
-                if (terminalAmount <= 0) return false;
-                let storageAmount = creep.room.storage.store[r] || 0;
-                let combined = storageAmount + terminalAmount;
-                // Pull into storage only when combined total is safely under threshold
-                return combined <= foreignSellThreshold;
-            });
-
-            if (inboundForeign) {
-                creep.memory.foreignMoveResource = inboundForeign;
-                creep.memory.foreignMoveMode = 'toStorage';
-                work.collectResource(creep, {
-                    storages: false, containers: false, terminals: true,
-                    drops: false, tombs: false, links: false, sources: false,
-                }, inboundForeign);
-                return;
-            }
+        // Priority 7: balance non-energy resources between storage and the
+        // terminal toward logistics.terminalTarget (exportable surplus staged
+        // in the terminal for the broker; excess imports moved to storage)
+        let balance = this.getTerminalBalanceJob(creep.room, creep.store.getFreeCapacity());
+        if (balance) {
+            creep.memory.terminalMoveResource = balance.resource;
+            creep.memory.terminalMoveMode = balance.mode;
+            let fromTerminal = balance.mode === 'toStorage';
+            work.collectResource(creep, {
+                storages: !fromTerminal, containers: false, terminals: fromTerminal,
+                ignoreTerminalThresholds: true,
+                drops: false, tombs: false, links: false, sources: false,
+            }, balance.resource);
+            return;
         }
 
         // Priority 8: loose minerals from containers or drops
@@ -1033,7 +987,32 @@ module.exports = {
             creep.say("🚚 Deliver");
         }
     }
-},  // Used in collect phase - checks raw lab need without enRoute adjustment
+},
+
+// Returns { resource, mode } for the first non-energy resource whose terminal
+// amount is off its logistics target: 'toTerminal' when the terminal is more
+// than IN_SLACK under target and storage has some, 'toStorage' when it is more
+// than OUT_SLACK over (the wide out-margin leaves imports in the terminal where
+// labs/factory can still pull them, instead of shuffling every delivery).
+// minStorage: storage only counts as a source when it holds more than this —
+// getCollectTarget skips a storage holding less than the creep's free
+// capacity, and a job it can't source would block the lower priorities.
+getTerminalBalanceJob(room, minStorage = 0) {
+    const IN_SLACK = 1000, OUT_SLACK = 5000;
+    let terminal = room.terminal, storage = room.storage;
+    if (!terminal || !storage) return null;
+    let resources = new Set([...Object.keys(terminal.store), ...Object.keys(storage.store)]);
+    for (let r of resources) {
+        if (r === RESOURCE_ENERGY) continue;
+        let target = logistics.terminalTarget(room, r);
+        let t = terminal.store[r] || 0;
+        let s = storage.store[r] || 0;
+        if (t < target - IN_SLACK && s > minStorage && terminal.store.getFreeCapacity() > 0) return { resource: r, mode: 'toTerminal' };
+        if (t > target + OUT_SLACK && storage.store.getFreeCapacity() > 0) return { resource: r, mode: 'toStorage' };
+    }
+    return null;
+},
+// Used in collect phase - checks raw lab need without enRoute adjustment
 //  Only considers input/booster labs - output labs accumulate from reactions, not transporter fills
 getLabFillTargetRaw(room) {
     let labs = room.find(FIND_MY_STRUCTURES, {
