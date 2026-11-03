@@ -488,27 +488,51 @@ module.exports = {
         );
       }
     } else {
-      let targets = creep.room.find(FIND_STRUCTURES, {
-        algorithm: "astar",
-        filter: (s) => {
-          return (
-            (s.structureType === STRUCTURE_SPAWN &&
-              s.store.getFreeCapacity(resource) > 0) ||
-            (s.structureType === STRUCTURE_EXTENSION &&
-              s.store.getFreeCapacity(resource) > 0) ||
-            (s.structureType === STRUCTURE_TOWER &&
-              s.store.getFreeCapacity(resource) > 250) ||
-            (s.structureType === STRUCTURE_TERMINAL &&
-              s.store.getFreeCapacity(resource) > 0 &&
-              s.store.getUsedCapacity(resource) < 50000) ||
-            (resource === RESOURCE_ENERGY &&
-              s.structureType === STRUCTURE_LAB &&
-              s.store.getFreeCapacity(RESOURCE_ENERGY) > 0)
-          );
-        },
-      });
       let controllerUnder5 =
         creep.room.controller != null && creep.room.controller.level < 5;
+
+      // Energy: drain the targetLink first. It's the room's income (sender
+      // links stall once it's full) and used to lose to the storage on
+      // distance whenever anything needed energy, so a transporter could
+      // loop storage -> storage while the link sat full.
+      if (resource === RESOURCE_ENERGY) {
+        let link = Game.getObjectById(creep.room.memory.targetLink);
+        if (
+          link &&
+          link.store.getUsedCapacity(RESOURCE_ENERGY) >= Math.min(400, creep.store.getFreeCapacity(RESOURCE_ENERGY))
+        ) {
+          // collectResource reuses a cached target before looking at options
+          if (creep.memory.targetCollect !== link.id) creep.memory.targetCollect = null;
+          if (work.collectResource(creep, { links: true, drops: false, tombs: false, ruins: false }, resource)) {
+            return;
+          }
+        }
+      }
+
+      // Only pull from storage when there's somewhere to deliver other than
+      // storage. Asking getDepositTarget (the same check the delivery uses,
+      // claimed extensions/towers excluded) keeps the two in agreement — a
+      // separate filter used to disagree and bounce loads straight back.
+      let targets = [];
+      if (resource === RESOURCE_ENERGY) {
+        let dest = work.getDepositTarget(
+          creep,
+          // factory left out: it's topped up from link/surplus loads on
+          // delivery, but isn't a reason to drain storage
+          { factory: false, terminal: true, labs: true, links: false, storages: false, containers: false },
+          resource,
+        );
+        if (dest) targets.push(dest);
+      } else {
+        targets = creep.room.find(FIND_STRUCTURES, {
+          filter: (s) =>
+            (s.structureType === STRUCTURE_SPAWN || s.structureType === STRUCTURE_EXTENSION) &&
+            s.store.getFreeCapacity(resource) > 0 ||
+            (s.structureType === STRUCTURE_TOWER && s.store.getFreeCapacity(resource) > 250) ||
+            (s.structureType === STRUCTURE_TERMINAL && s.store.getFreeCapacity(resource) > 0 &&
+              s.store.getUsedCapacity(resource) < 50000),
+        });
+      }
 
       work.collectResource(
         creep,
