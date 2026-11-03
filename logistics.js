@@ -31,7 +31,8 @@ const DEFAULTS = {
     maxSend: 10000,         // largest single non-energy send
     terminalStock: 10000,   // how much exportable surplus to keep staged in the terminal
     terminalEnergyReserve: 10000, // terminal energy a send must leave behind
-    labBuffer: 3000,        // extra held per active lab resource so labs never starve
+    labBuffer: 3000,        // extra held per reaction input so labs never starve
+    boosterBuffer: 1000,    // extra held per booster lab compound
     factoryBatches: 10,     // factory component demand = recipe amount x batches
     energy: {
         // Effective energy = storage + terminal energy above the terminal's
@@ -41,6 +42,11 @@ const DEFAULTS = {
         strong: { low: 40000, target: 60000, donorFloor: 120000 },
         weak:   { low: 80000, target: 100000, donorFloor: Infinity },
         emergency: 20000,   // below this the need jumps to top priority
+        // RCL 8 rooms can only spend 15 energy/tick upgrading, so their
+        // surplus is worth more in uncapped RCL < 8 rooms. Sink needs are the
+        // lowest priority and are only filled by RCL 8 donors.
+        rcl8: { donorFloor: 100000 },
+        upgradeSink: { enabled: true, target: 150000 },
         minSend: 5000,
         maxSend: 20000,
     },
@@ -53,7 +59,7 @@ const DEFAULTS = {
     historySize: 30,
 };
 
-const PRIORITY = { emergency: 0, boost: 1, reaction: 2, factory: 3, energy: 4, structure: 5, manual: 6 };
+const PRIORITY = { emergency: 0, boost: 1, reaction: 2, factory: 3, energy: 4, structure: 5, manual: 6, sink: 7 };
 
 function deepMerge(base, over){
     if(!over || typeof over !== "object") return base;
@@ -105,6 +111,7 @@ module.exports = {
     energyBands(room){
         let cfg = this.config();
         let bands = Object.assign({}, this.isWeak(room) ? cfg.energy.weak : cfg.energy.strong);
+        if(room.controller && room.controller.level === 8) Object.assign(bands, cfg.energy.rcl8);
         return Object.assign(bands, this.roomConfig(room.name).energy || {});
     },
 
@@ -134,17 +141,17 @@ module.exports = {
         let place = (r, amount) => { if(amount > 0) inPlace[r] = (inPlace[r] || 0) + amount; };
 
         let labs = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_LAB });
-        let labResources = new Set();
+        let labResources = {};
         for(let lab of labs){
             let role = lab.memory.role;
             let r = lab.memory.resource;
-            if(!r || role === "output") continue;
+            if(!r || role === "output" || role === "idle") continue;
             add(r, lab.memory.amount || 2000, role === "booster" ? PRIORITY.boost : PRIORITY.reaction);
             place(r, lab.store[r] || 0);
-            labResources.add(r);
+            labResources[r] = Math.max(labResources[r] || 0, role === "booster" ? cfg.boosterBuffer : cfg.labBuffer);
         }
-        for(let r of labResources){
-            add(r, cfg.labBuffer, want[r].priority);
+        for(let r of Object.keys(labResources)){
+            add(r, labResources[r], want[r].priority);
         }
 
         let factory = room.factory;
@@ -219,8 +226,18 @@ module.exports = {
                 room: room.name, resource: RESOURCE_ENERGY, amount,
                 priority: e < cfg.energy.emergency ? PRIORITY.emergency : PRIORITY.energy,
             });
+        }else if(this.isUpgradeSink(room) && e < cfg.energy.upgradeSink.target){
+            needs.push({ room: room.name, resource: RESOURCE_ENERGY, amount: cfg.energy.upgradeSink.target - e,
+                priority: PRIORITY.sink, sink: true });
         }
         return needs;
+    },
+
+    isUpgradeSink(room){
+        let sink = this.config().energy.upgradeSink;
+        let rc = this.roomConfig(room.name);
+        if(rc.upgradeSink !== undefined) return !!rc.upgradeSink;
+        return sink.enabled && room.controller.level < 8;
     },
 
     record(entry){
@@ -265,6 +282,7 @@ module.exports = {
             let best = null;
             for(let src of rooms){
                 if(src.name === dst.name || used.has(src.name)) continue;
+                if(need.sink && src.controller.level < 8) continue;
                 let surplus = this.surplusOf(src, need.resource) + pend(src.name, need.resource);
                 let inTerminal = src.terminal.store[need.resource] || 0;
                 let termEnergy = src.terminal.store[RESOURCE_ENERGY] || 0;
@@ -338,7 +356,8 @@ module.exports = {
             if(!room.terminal){ lines.push(tag+": no terminal — not in the network"); continue; }
             let b = this.energyBands(room);
             let e = this.effectiveEnergy(room);
-            let state = e < b.low ? "NEED" : (isFinite(b.donorFloor) && e > b.donorFloor ? "donor" : "ok");
+            let state = e < b.low ? "NEED" : (isFinite(b.donorFloor) && e > b.donorFloor ? "donor"
+                : (this.isUpgradeSink(room) && e < cfg.energy.upgradeSink.target ? "upgrade sink" : "ok"));
             lines.push(tag+": energy "+Math.round(e/1000)+"k ["+state+"; low "+b.low/1000+"k, target "+b.target/1000
                 +"k, donor "+(isFinite(b.donorFloor) ? b.donorFloor/1000+"k" : "never")+"]");
             let needs = this.buildLedger(room).filter(n => n.resource !== RESOURCE_ENERGY);

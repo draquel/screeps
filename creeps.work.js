@@ -1,6 +1,7 @@
 /* eslint-disable no-undef */
 const util = require("./util");
 const logistics = require("./logistics");
+const production = require("./production");
 
 module.exports =  {
 
@@ -105,7 +106,9 @@ module.exports =  {
     },
 
     workerUpgrade(creep){
-        if(creep.room.controller.level < 8 || (creep.room.controller.level == 8 && creep.room.controller.ticksToDowngrade < 75000)) {
+        // General workers only top up an RCL 8 controller against downgrade;
+        // dedicated upgraders always upgrade (15/tick room cap, boosted = 30 GCL).
+        if(creep.room.controller.level < 8 || production.isUpgrader(creep) || creep.room.controller.ticksToDowngrade < 75000) {
             if(creep.upgradeController(creep.room.controller) === ERR_NOT_IN_RANGE){
                 util.moveToTarget(creep,{showPath: creep.room.memory.showPath, pathColor: '#ff0000'},creep.room.controller)
             }

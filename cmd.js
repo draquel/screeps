@@ -53,6 +53,35 @@ module.exports = {
     // Tunables: Memory.logistics.config (overrides logistics.DEFAULTS) and
     // Memory.logistics.rooms[name] = { weak, export, wants: {res: amt}, energy: {low, target, donorFloor} }.
     logistics() { return require('./logistics').report() },
+
+    // Production (production.js): goal-driven lab reactions + upgrader boosts.
+    production() { return require('./production').report() },
+    // Empire stockpile goal; amount 0/null removes it. e.g. cmd.goal('XGH2O', 10000)
+    goal(resource, amount) {
+      const p = require('./production')
+      const cfg = p.mem().config
+      cfg.goals = Object.assign({}, cfg.goals || p.DEFAULTS.goals)
+      if(!(amount > 0)){ delete cfg.goals[resource] } else { cfg.goals[resource] = amount }
+      console.log('production goals: '+JSON.stringify(cfg.goals))
+      return cfg.goals
+    },
+    // Lab usage for a room: 'auto' | 'off' | 'react' | 'boost' | 'both'
+    labMode(room, mode = 'auto') {
+      require('./production').roomMem(room).mode = mode
+      console.log('production: '+room+' lab mode '+mode)
+    },
+    // Queue dedicated (boost-eligible) upgraders: workers with every other duty off.
+    spawnUpgraders(room, count = 1, level = 7) {
+      rooms.queCreep(room, 'worker', count, { level: level, respawn: true, upgrader: true })
+    },
+    // Turn a live worker into a dedicated upgrader (or back with on = false).
+    upgrader(name, on = true) {
+      const c = Game.creeps[name]
+      if(!c){ console.log('no creep '+name); return }
+      c.memory.upgrader = on
+      c.memory.eligibility = { base: !on, repair: !on, build: !on, ramparts: !on }
+      console.log(name+' upgrader='+on)
+    },
     want(room, resource, amount) {
       const m = require('./logistics').mem()
       const rc = m.rooms[room] = m.rooms[room] || {}

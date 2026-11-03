@@ -4,6 +4,7 @@ const work = require("./creeps.work");
 const combat = require("./creeps.combat");
 const util = require("./util");
 const logistics = require("./logistics");
+const production = require("./production");
 
 module.exports = {
   run(creep) {
@@ -128,11 +129,14 @@ module.exports = {
     if (memory.target != null && Game.getObjectById(memory.target) != null) {
       return memory;
     }
+    // memory.upgrader: a dedicated upgrader — every other duty off, and
+    // eligible for upgrade boosts (production.isUpgrader)
+    let duties = !memory.upgrader;
     memory.eligibility = {
-      base: true,
-      repair: true,
-      build: true,
-      ramparts: true,
+      base: duties,
+      repair: duties,
+      build: duties,
+      ramparts: duties,
     };
     memory.rechargeTargets = {
       drops: true,
@@ -237,6 +241,11 @@ module.exports = {
       return;
     } else if (creep.memory.targetRoom == null && !this.inHomeRoom(creep)) {
       this.moveToHome(creep);
+      return;
+    }
+
+    // Pure upgraders visit the booster lab once per life (see production.js)
+    if (production.seekBoost(creep)) {
       return;
     }
 
