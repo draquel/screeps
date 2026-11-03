@@ -33,6 +33,7 @@ const DEFAULTS = {
     terminalEnergyReserve: 10000, // terminal energy a send must leave behind
     labBuffer: 3000,        // extra held per reaction input so labs never starve
     boosterBuffer: 1000,    // extra held per booster lab compound
+    nukerGhodium: false,    // count nuker G capacity as demand
     factoryBatches: 10,     // factory component demand = recipe amount x batches
     energy: {
         // Effective energy = storage + terminal energy above the terminal's
@@ -163,7 +164,9 @@ module.exports = {
             }
         }
 
-        let nuker = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_NUKER })[0];
+        // Off by default: nothing loads the nuker yet, so the G would sit in
+        // storage reserved, away from the GH reaction (GCL focus).
+        let nuker = cfg.nukerGhodium && room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_NUKER })[0];
         if(nuker){
             let free = nuker.store.getFreeCapacity(RESOURCE_GHODIUM) || 0;
             if(free > 0) add(RESOURCE_GHODIUM, free, PRIORITY.structure);

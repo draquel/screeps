@@ -31,6 +31,7 @@ const DEFAULTS = {
     goals: { [RESOURCE_CATALYZED_GHODIUM_ACID]: 10000 },
     minBatch: 500,          // ingredients needed (empire-wide) to start a reaction
     minJobTicks: 1500,      // a job runs at least this long before a higher-tier one can preempt it
+    roomsPerProduct: 2,     // spare reactors may double up on a ready reaction
     inputAmount: 2000,      // input lab fill target
     outputCap: 3000,        // output lab cap (drained to storage from 1500)
     boost: {
@@ -193,7 +194,10 @@ module.exports = {
         if(!room.storage) return "off";
         let n = this.labs(room).length;
         if(n >= 6) return "both";
-        if(n >= 1) return this.boostAllowed(room) ? "boost" : (n >= 3 ? "react" : "off");
+        // 3-5 labs can't both react and boost. React until there's an
+        // upgrade compound to boost with — an empty booster lab is wasted.
+        if(n >= 3) return this.boostAllowed(room) && this.mem().boostCompound ? "boost" : "react";
+        if(n >= 1) return this.boostAllowed(room) ? "boost" : "off";
         return "off";
     },
 
@@ -271,12 +275,15 @@ module.exports = {
         let byProduct = {};
         for(let c of cands) byProduct[c.product] = c;
 
-        let taken = new Set();
+        let cfg = this.config();
+        let count = {};
+        let taken = { has: (p) => (count[p] || 0) > 0 };
+        let take = (p) => { count[p] = (count[p] || 0) + 1; };
         let free = [];
         for(let room of reactors){
             let rm = this.roomMem(room.name);
-            if(rm.job && byProduct[rm.job.product] && !taken.has(rm.job.product)){
-                taken.add(rm.job.product);
+            if(rm.job && byProduct[rm.job.product] && (count[rm.job.product] || 0) < cfg.roomsPerProduct){
+                take(rm.job.product);
             }else{
                 if(rm.job) console.log("[Production] "+room.name+": finished "+rm.job.product);
                 rm.job = null;
@@ -291,7 +298,17 @@ module.exports = {
             free.sort((x, y) => (held(y, c.a) + held(y, c.b)) - (held(x, c.a) + held(x, c.b)));
             let room = free.shift();
             this.startJob(room, c);
-            taken.add(c.product);
+            take(c.product);
+        }
+        // Spare reactors double up on ready reactions (highest tier first)
+        // that have ingredients for more than one room.
+        for(let c of cands){
+            if(!free.length) break;
+            let stock = this.stock();
+            if((count[c.product] || 0) >= cfg.roomsPerProduct) continue;
+            if((stock[c.a] || 0) < 2 * cfg.minBatch || (stock[c.b] || 0) < 2 * cfg.minBatch) continue;
+            this.startJob(free.shift(), c);
+            take(c.product);
         }
         // No free reactor but a higher-tier reaction is ready: preempt the
         // lowest-tier job that has had its minimum run (one per pass), so
