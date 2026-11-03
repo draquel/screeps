@@ -430,17 +430,23 @@ module.exports = {
     }
     if (!creep.memory.working && creep.store.getFreeCapacity() === 0) {
       creep.memory.working = true;
+      // Remember where this load came from so delivery can avoid handing it
+      // straight back (terminal surplus drain, see collect options below).
+      creep.memory.collectedFrom = creep.memory.targetCollect;
       creep.memory.targetCollect = null;
       creep.say("🚚 Deliver");
     }
 
     if (creep.memory.working) {
+      const fromTerminal =
+        creep.room.terminal != null &&
+        creep.memory.collectedFrom === creep.room.terminal.id;
       if (
         !work.depositResources(
           creep,
           {
             factory: true,
-            terminal: true,
+            terminal: !fromTerminal,
             labs:true,
             links: false,
             storages: false,
@@ -494,6 +500,12 @@ module.exports = {
           sources: false,
           containers: controllerUnder5 || resource !== RESOURCE_ENERGY,
           storages: targets.length > 0,
+          // Drain energy sent in by other rooms. The floor sits above the 50k
+          // level transporters/harvesters fill the terminal to, so this only
+          // takes true surplus and can't fight the top-up. Energy only: the
+          // terminal option would otherwise pull foreign minerals too.
+          terminals: resource === RESOURCE_ENERGY,
+          terminalEnergyFloor: 55000,
         },
         resource,
       );

@@ -147,7 +147,7 @@ The creep role dispatcher. Routes each creep to its role handler based on `creep
 | `scout` | Moves to a target room then patrols sources and controller |
 | `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures. Energy harvesters working a remote `targetRoom` spend the top 25% of their load on local construction/repair before heading home, keeping a 75% reserve so they always carry energy back (the reserve prevents a maintain→empty→harvest cycle that would trap them in the remote room). A `memory.eligibility.repair` flag (default `true`, opt-out) gates both the home-room and remote-room repair passes so a harvester can skip repairs and avoid diverting energy from the room's flow — queue with `eligibility:{repair:false}` in the spawn memory, or flip a live creep's `memory.eligibility.repair`. Harvesters missing the flag entirely (spawned before it existed) are treated as eligible; only an explicit `false` opts out. Home-room deposit: if a base refiller is in the room (a `worker` with `eligibility.base`, or a `transporter`/`transporter2` hauling energy), the harvester uses pooled mode (`getDepositTarget` with `pool:true`) and unloads at the closest of spawns/extensions/towers/links/storage/terminal(<50k)/factory(<10k); otherwise it uses the tiered order (spawns/extensions > towers > labs > terminal/factory > links/storage) |
 | `worker` | Refills base energy, repairs structures and ramparts, builds construction sites; falls back to upgrading the controller. Eligibility flags in `memory.eligibility` (`base`, `repair`, `ramparts`, `build`) gate which subtasks the creep will pick up |
-| `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs) |
+| `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs). Energy transporters also drain terminal energy above 55k (surplus from inter-room sends; above the 50k top-up level so the two never fight); a load taken from the terminal is never delivered back to it (`memory.collectedFrom`) |
 | `transporter2` | Variant transporter that prioritizes resources currently in its store |
 | `mineralTransporter` | Specialized hauler for lab/factory feeds and terminal top-ups (drain/fill/share priorities; see `runMineralTransporter` in `creeps.js`) |
 | `miner` | Dedicated harvester assigned to a single source; deposits into nearby links or containers. Sets `memory.noShove` while parked on its work tile |
@@ -187,7 +187,7 @@ Low-level worker action functions used by creep roles.
 
 | Function | Description |
 |----------|-------------|
-| `getCollectTarget(creep, options, resource)` | Find the best collection target based on options (storages, drops, tombs, containers, links, labs, deposits, sources). Respects "taken" targets to avoid duplication. |
+| `getCollectTarget(creep, options, resource)` | Find the best collection target based on options (storages, drops, tombs, containers, links, labs, terminals, deposits, sources). Terminal energy is collected above `options.terminalEnergyFloor` (default 11000). Respects "taken" targets to avoid duplication. |
 | `collectTargetResource(creep, target, resource)` | Dispatches to the correct action (withdraw, pickup, harvest) based on target type |
 | `collectResource(creep, options, resource)` | High-level collect: uses cached target or finds a new one |
 

@@ -186,7 +186,7 @@ if(options.containers){
                 let shouldCollect = options.ignoreTerminalThresholds
                     ? used > 0
                     : (resource !== RESOURCE_ENERGY && resource !== roomMineral && used > 0) ||
-                      (resource === RESOURCE_ENERGY && used > 11000) ||
+                      (resource === RESOURCE_ENERGY && used > (options.terminalEnergyFloor != null ? options.terminalEnergyFloor : 11000)) ||
                       (resource === roomMineral && used > 26000);
                 if(shouldCollect){
                     targets.push(terminal);
