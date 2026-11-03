@@ -68,6 +68,7 @@ module.exports = {
         this.runTerminal(room)
         this.runLabs(room)
         this.runFactory(room)
+        this.runPowerSpawn(room)
     },
 
     runTowers(room){
@@ -189,6 +190,20 @@ module.exports = {
                 }
             }
         }
+    },
+
+    // Processes power (1/tick, 50 energy each) only on surplus energy: the
+    // room must be above powerEnergyFloor, which sits above the logistics
+    // RCL 8 donor floor (100k) so upgrade-sink sharing to RCL 7 rooms (GCL)
+    // gets first call on spare energy and GPL gets what's left.
+    runPowerSpawn(room){
+        if(!room.controller || room.controller.level < 8) return;
+        let ps = room.find(FIND_MY_STRUCTURES, {filter: s => s.structureType === STRUCTURE_POWER_SPAWN})[0];
+        if(!ps) return;
+        if((ps.store[RESOURCE_POWER] || 0) < 1 || (ps.store[RESOURCE_ENERGY] || 0) < POWER_SPAWN_ENERGY_RATIO) return;
+        let floor = (Memory.power && Memory.power.config && Memory.power.config.powerEnergyFloor) || 150000;
+        if(require('./logistics').effectiveEnergy(room) < floor) return;
+        ps.processPower();
     },
 
     runFactory(room){
@@ -661,7 +676,7 @@ module.exports = {
       // unstick worker spawns normally.
       const head = room.memory.spawnQueue[0];
       if(!head || !head.memory || !head.memory.role) return false;
-      const headBuild = util.getRoleBuild(head.memory.role, head.memory.level || 1);
+      const headBuild = util.getCreepBuild(head.memory);
       const headCost = util.calcCreepBuildEnergy(headBuild);
       if(headCost <= room.energyAvailable) return false;
 

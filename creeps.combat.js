@@ -22,19 +22,24 @@ module.exports = {
     return result;
   },
 
+  // Stays with the target (range 1) and heals it when damaged; with the
+  // target at full HP it heals itself if hurt. Previously it returned early
+  // at full HP without moving, so a healer could never follow its target.
   combatHeal(creep, target) {
-    if (target.hits === target.hitsMax) {
-      return;
-    }
-
-    let result = creep.heal(target);
-    if (result === ERR_NOT_IN_RANGE) {
+    if (!creep.pos.isNearTo(target)) {
       util.moveToTarget(
         creep,
-        { showPath: creep.room.memory.showPath, pathColor: "#00ff00" },
+        { showPath: creep.room.memory.showPath, pathColor: "#00ff00", range: 1 },
         target,
       );
-    } else if (result === ERR_INVALID_TARGET) {
+    }
+    if (target.hits === target.hitsMax) {
+      if (creep.hits < creep.hitsMax) creep.heal(creep);
+      return OK;
+    }
+
+    let result = creep.pos.isNearTo(target) ? creep.heal(target) : creep.rangedHeal(target);
+    if (result === ERR_INVALID_TARGET) {
       creep.memory.target = null;
     } else if (result === ERR_NO_BODYPART) {
       console.log(

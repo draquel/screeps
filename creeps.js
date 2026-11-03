@@ -5,6 +5,7 @@ const combat = require("./creeps.combat");
 const util = require("./util");
 const logistics = require("./logistics");
 const production = require("./production");
+const power = require("./power");
 
 module.exports = {
   run(creep) {
@@ -330,16 +331,24 @@ module.exports = {
         return;
       }
 
-      work.collectResource(
+      // Power haulers (power.js): share one big pile, also loot the ruin,
+      // and wait by the bank until it breaks / head home once it's gone.
+      const powerHaul = creep.memory.mode === "power";
+      const collected = work.collectResource(
         creep,
         {
           sources: true,
           drops: true,
           tombs: true,
           deposits: true,
+          ruins: powerHaul,
+          shareDrops: powerHaul,
         },
         resource,
       );
+      if (!collected && powerHaul) {
+        power.haulerIdle(creep);
+      }
     } else {
       if (!this.inHomeRoom(creep)) {
         // In the harvest target room, spend a bounded slice of the load on local
@@ -795,6 +804,7 @@ module.exports = {
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
+        creep.memory.powerSpawnFeed = null;
         creep.say("🛻 Load");
     }
     if (!creep.memory.working && creep.store.getFreeCapacity() === 0) {
@@ -833,6 +843,17 @@ module.exports = {
             }
         }
         creep.memory.factoryFeedResource = null;
+
+        // Priority 2b: power spawn feed (power or energy)
+        let psFeed = creep.memory.powerSpawnFeed;
+        if (psFeed && carried.includes(psFeed)) {
+            let ps = this.getPowerSpawn(creep.room);
+            if (ps && ps.store.getFreeCapacity(psFeed) > 0) {
+                work.workerTransfer(creep, ps, psFeed);
+                return;
+            }
+        }
+        creep.memory.powerSpawnFeed = null;
 
         // Priority 3: lab fill resource goes to lab if still needed
         let labResource = carried.find(r => this.getRoomLabResource(creep.room, r) != null);
@@ -893,6 +914,7 @@ module.exports = {
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
+        creep.memory.powerSpawnFeed = null;
 
         // Priority 1: drain labs with wrong or unassigned contents
         let drainTarget = this.getLabDrainTarget(creep);
@@ -949,6 +971,22 @@ module.exports = {
             return;
         }
 
+        // Priority 5b: feed the power spawn (see getPowerSpawnNeed)
+        let psNeed = this.getPowerSpawnNeed(creep.room);
+        if (psNeed) {
+            // Take only what the power spawn can hold, then deliver straight
+            // away (a partial load never trips the "full -> deliver" switch).
+            creep.memory.powerSpawnFeed = psNeed.resource;
+            let amount = Math.min(creep.store.getFreeCapacity(), psNeed.amount, psNeed.source.store[psNeed.resource] || 0);
+            let r = creep.withdraw(psNeed.source, psNeed.resource, amount);
+            if (r === ERR_NOT_IN_RANGE) {
+                util.moveToTarget(creep, { pathColor: '#ff00ff' }, psNeed.source);
+            } else if (r === OK) {
+                creep.memory.working = true;
+            }
+            return;
+        }
+
         // Priority 6: drain miner containers
         if (roomMineral) {
             let hasInContainers = creep.room.find(FIND_STRUCTURES, {
@@ -996,6 +1034,38 @@ module.exports = {
             creep.say("🚚 Deliver");
         }
     }
+},
+
+getPowerSpawn(room) {
+    if (room._powerSpawn === undefined) {
+        room._powerSpawn = room.find(FIND_MY_STRUCTURES, { filter: s => s.structureType === STRUCTURE_POWER_SPAWN })[0] || null;
+    }
+    return room._powerSpawn;
+},
+
+// Power spawn top-up: power when it's below half and the room holds some;
+// energy (from storage) when it's below half, there's power to process, and
+// the room is above the processing floor (rooms.runPowerSpawn) — so a
+// starved room never hauls its energy into the power spawn.
+// Returns { resource, source } — withdrawn directly (not via getCollectTarget,
+// which skips a storage holding less than a full load).
+getPowerSpawnNeed(room) {
+    let ps = this.getPowerSpawn(room);
+    if (!ps || !room.storage) return null;
+    let power = ps.store[RESOURCE_POWER] || 0;
+    let inTerminal = room.terminal ? room.terminal.store[RESOURCE_POWER] || 0 : 0;
+    let inStorage = room.storage.store[RESOURCE_POWER] || 0;
+    if (power < POWER_SPAWN_POWER_CAPACITY / 2 && inTerminal + inStorage > 0) {
+        return { resource: RESOURCE_POWER, source: inTerminal > 0 ? room.terminal : room.storage,
+            amount: POWER_SPAWN_POWER_CAPACITY - power };
+    }
+    let floor = (Memory.power && Memory.power.config && Memory.power.config.powerEnergyFloor) || 150000;
+    if ((ps.store[RESOURCE_ENERGY] || 0) < POWER_SPAWN_ENERGY_CAPACITY / 2 && (power > 0 || inTerminal + inStorage > 0)
+        && room.storage.store[RESOURCE_ENERGY] > floor) {
+        return { resource: RESOURCE_ENERGY, source: room.storage,
+            amount: POWER_SPAWN_ENERGY_CAPACITY - (ps.store[RESOURCE_ENERGY] || 0) };
+    }
+    return null;
 },
 
 // Returns { resource, mode } for the first non-energy resource whose terminal
@@ -1254,6 +1324,10 @@ getLabFillTarget(creep) {
   },
 
   runAttack(creep) {
+    if (creep.memory.mode === "powerBank") {
+      power.runAttacker(creep);
+      return;
+    }
     if (creep.memory.fighting && creep.memory.target === null) {
       creep.memory.fighting = false;
       //creep.say('🚚 Defend');

@@ -140,7 +140,9 @@ module.exports =  {
         let targets = [];
         
         if(options.drops){
-            let drops = creep.room.find(FIND_DROPPED_RESOURCES,{filter:(d) => d.resourceType === resource && !taken.includes(d.id)})
+            // shareDrops: several creeps may claim one pile (a broken power bank
+            // drops thousands — more than one hauler can carry)
+            let drops = creep.room.find(FIND_DROPPED_RESOURCES,{filter:(d) => d.resourceType === resource && (options.shareDrops || !taken.includes(d.id))})
             if(drops.length > 0) { return creep.pos.findClosestByPath(drops); }
             targets.push(...drops);
         }

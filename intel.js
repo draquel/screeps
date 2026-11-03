@@ -25,6 +25,33 @@ function ensure() {
     return Memory.intel;
 }
 
+function isHighwayByName(roomName) {
+    const parsed = /^[WE](\d+)[NS](\d+)$/.exec(roomName);
+    return !!parsed && (parsed[1] % 10 === 0 || parsed[2] % 10 === 0);
+}
+
+// Power bank snapshot for a visible highway room (consumed by power.js).
+// open = walkable tiles adjacent to the bank (how many attackers fit).
+function recordPowerBank(room, r) {
+    const bank = room.find(FIND_STRUCTURES, { filter: s => s.structureType === STRUCTURE_POWER_BANK })[0];
+    if (!bank) { delete r.powerBank; return; }
+    let open = 0;
+    const terrain = room.getTerrain();
+    for (let dx = -1; dx <= 1; dx++) {
+        for (let dy = -1; dy <= 1; dy++) {
+            if (!dx && !dy) continue;
+            const x = bank.pos.x + dx, y = bank.pos.y + dy;
+            if (x < 1 || x > 48 || y < 1 || y > 48) continue;
+            if (terrain.get(x, y) !== TERRAIN_MASK_WALL) open++;
+        }
+    }
+    r.powerBank = {
+        id: bank.id, x: bank.pos.x, y: bank.pos.y,
+        power: bank.power, hits: bank.hits,
+        decayAt: Game.time + bank.ticksToDecay, open, seen: Game.time,
+    };
+}
+
 function isSourceKeeperByName(roomName) {
     const parsed = /^[WE](\d+)[NS](\d+)$/.exec(roomName);
     if (!parsed) return false;
@@ -53,6 +80,8 @@ function update() {
             });
             r.sourceKeeper = lairs.length > 0;
         }
+
+        if (isHighwayByName(name)) recordPowerBank(room, r);
 
         const hostileCreeps = room.find(FIND_HOSTILE_CREEPS);
         const hostileStructs = room.find(FIND_HOSTILE_STRUCTURES, {
@@ -98,4 +127,4 @@ function cleanup() {
     }
 }
 
-module.exports = { update, routeCallback, cleanup };
+module.exports = { update, routeCallback, cleanup, isHighwayByName };

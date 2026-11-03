@@ -7,6 +7,7 @@ const traffic = require('./traffic');
 const intel = require('./intel');
 const logistics = require('./logistics');
 const production = require('./production');
+const power = require('./power');
 
 module.exports.loop = function () {
     Game.util = require('./util');
@@ -31,6 +32,9 @@ module.exports.loop = function () {
     //Empire production planner (lab jobs + booster labs), every N ticks.
     //Before logistics so new lab assignments show up as needs this tick.
     production.run();
+
+    //Power mining ops (observer scan every tick, ops every N ticks)
+    power.run();
 
     //Empire resource sharing (terminal sends + overflow sells), every N ticks
     logistics.run();

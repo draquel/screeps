@@ -100,7 +100,7 @@ var util = {
                       delete Memory.creeps[name]
                       continue;
                     }
-                    var build = this.getRoleBuild(memory.role,memory.level);
+                    var build = this.getCreepBuild(memory);
                     var energy = this.calcCreepBuildEnergy(build);
                     var type = (memory['role'] != null ? memory['role'].charAt(0).toUpperCase()+memory['role'].slice(1)+" L"+memory['level'] : 'Creep')+ ' ('+energy+'E)';
                     var room = Game.rooms[Memory.creeps[name].room];
@@ -331,7 +331,7 @@ var util = {
         if(name == null){ name = this.nameGenerator(); }
         memory.room = spawn.room.name;
 
-        var build = this.getRoleBuild(memory.role,memory.level);
+        var build = this.getCreepBuild(memory);
         var energy = this.calcCreepBuildEnergy(build);
         var type = (memory.role != null ? this.firstToUpperCase(memory.role)+" L"+memory.level : 'Creep')+ ' ('+energy+'E)';
         if(spawn.room.energyAvailable >= energy){
@@ -383,6 +383,18 @@ var util = {
 
     firstToUpperCase(inString){
       return inString.charAt(0).toUpperCase()+inString.slice(1)
+    },
+
+    // Body for a creep's memory: memory.body ({PART: count, ...}, in order)
+    // overrides the role/level table, so a role can be reused with a
+    // purpose-built body (e.g. power bank attackers) without a new role.
+    getCreepBuild(memory){
+        if(memory && memory.body){
+            const build = []
+            Object.keys(memory.body).forEach(key => { for(let i = 0; i < memory.body[key]; i++){ build.push(key.toLowerCase()) } })
+            return build
+        }
+        return this.getRoleBuild(memory.role, memory.level || 1)
     },
 
     getRoleBuild(role,level = 1){

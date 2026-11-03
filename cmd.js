@@ -56,6 +56,18 @@ module.exports = {
 
     // Production (production.js): goal-driven lab reactions + upgrader boosts.
     production() { return require('./production').report() },
+
+    // Power mining (power.js): known banks, active operation, recent results.
+    // Tunables: Memory.power.config (overrides power.DEFAULTS, plus
+    // powerEnergyFloor for power spawn processing, default 150000).
+    power() { return require('./power').report() },
+    // Abandon the current power operation for a bank id (crew retire).
+    abortPower(bankId) {
+      const p = require('./power')
+      const op = p.mem().ops[bankId]
+      if(!op){ console.log('no power op '+bankId+'; ops: '+Object.keys(p.mem().ops).join(', ')); return }
+      p.endOp(op, 'aborted')
+    },
     // Empire stockpile goal; amount 0/null removes it. e.g. cmd.goal('XGH2O', 10000)
     goal(resource, amount) {
       const p = require('./production')

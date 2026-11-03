@@ -12,6 +12,7 @@ A bot for the online MMO [Screeps World](https://www.screeps.com/). Code is depl
 | `creeps.work.js` | Worker action functions (harvest, build, repair, etc.) |
 | `creeps.combat.js` | Combat action functions (attack, heal, claim, etc.) |
 | `rooms.js` | Room management (towers, links, spawning, mining, labs, factory, terminal) |
+| `power.js` | Power mining — observer scanning, power bank operations (attacker/healer pairs, haulers), crew cleanup |
 | `production.js` | Production planner — stockpile goals → lab reaction jobs, booster labs, upgrader boosting |
 | `logistics.js` | Empire resource sharing — per-room needs/surplus ledger, terminal broker, overflow selling |
 | `market.js` | In-game market order management |
@@ -41,10 +42,11 @@ The game loop entry point. Each tick it:
 4. Cleans up stale memory (dead creeps, abandoned rooms); every 1000 ticks also runs `intel.cleanup()`
 5. Calls `intel.update()` to refresh `Memory.intel.rooms` for visible rooms (powers the route filter)
 6. Runs room operations for each owned room
-7. Calls `production.run()` — every 50 ticks, assigns lab reaction jobs and booster compounds (before logistics so new lab assignments become needs the same tick)
-8. Calls `logistics.run()` — every 10 ticks, matches room needs to surplus and sends via terminals (after room ops so queued deals are already executing)
-9. Runs creep operations for each owned creep
-10. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
+7. Calls `power.run()` — observer scan every tick; power operations every 10 ticks
+8. Calls `production.run()` — every 50 ticks, assigns lab reaction jobs and booster compounds (before logistics so new lab assignments become needs the same tick)
+9. Calls `logistics.run()` — every 10 ticks, matches room needs to surplus and sends via terminals (after room ops so queued deals are already executing)
+10. Runs creep operations for each owned creep
+11. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
 
 The ordering matters: `traffic.install` must run after `proto.load` each tick (the prototype loader can reset the wrapper), `intel.update` must run before role logic so `intel.routeCallback` has fresh data, and `traffic.resolve` must run last so it sees every intent captured during the role passes.
 
@@ -96,6 +98,8 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
 | `logistics()` | Print the logistics report: each room's energy band state, needs, surplus, empire totals vs sell caps, recent sends/sells |
 | `production()` | Print the production report: goals vs stock, amounts still to make, base mineral stock, per-room lab mode/job/booster, upgraders boosted, missing mineralTransporters |
+| `power()` | Print the power report: RCL 8 homes (observer flag), known banks, active operation crew counts, recent results |
+| `abortPower(bankId)` | End a power operation now (queued crew removed, fighters retire, haulers finish delivering) |
 | `goal(resource, amount)` | Set an empire stockpile goal (`Memory.production.config.goals`); `amount` 0/null removes it |
 | `labMode(room, mode)` | Lab usage for a room: `auto` (default), `off` (planner leaves the labs alone), `react`, `boost`, `both` |
 | `spawnUpgraders(room, count, level)` | Queue dedicated upgraders (`worker` with `upgrader: true`, every other duty off, respawning) — these are the creeps that get upgrade boosts |
@@ -157,17 +161,17 @@ The creep role dispatcher. Routes each creep to its role handler based on `creep
 | Role | Description |
 |------|-------------|
 | `scout` | Moves to a target room then patrols sources and controller |
-| `harvester` | Harvests energy from sources/drops/tombs and delivers to base structures. Energy harvesters working a remote `targetRoom` spend the top 25% of their load on local construction/repair before heading home, keeping a 75% reserve so they always carry energy back (the reserve prevents a maintain→empty→harvest cycle that would trap them in the remote room). A `memory.eligibility.repair` flag (default `true`, opt-out) gates both the home-room and remote-room repair passes so a harvester can skip repairs and avoid diverting energy from the room's flow — queue with `eligibility:{repair:false}` in the spawn memory, or flip a live creep's `memory.eligibility.repair`. Harvesters missing the flag entirely (spawned before it existed) are treated as eligible; only an explicit `false` opts out. Home-room deposit: if a base refiller is in the room (a `worker` with `eligibility.base`, or a `transporter`/`transporter2` hauling energy), the harvester uses pooled mode (`getDepositTarget` with `pool:true`) and unloads at the closest of spawns/extensions/towers/links/storage/terminal(<50k)/factory(<10k); otherwise it uses the tiered order (spawns/extensions > towers > labs > terminal/factory > links/storage) |
+| `harvester` | `memory.mode = 'power'` makes it a power hauler: collects `RESOURCE_POWER` from the shared drop pile (`shareDrops`) and ruins, waits near the bank via `power.haulerIdle`, and heads home with a partial load once the pile is gone. Otherwise: harvests energy from sources/drops/tombs and delivers to base structures. Energy harvesters working a remote `targetRoom` spend the top 25% of their load on local construction/repair before heading home, keeping a 75% reserve so they always carry energy back (the reserve prevents a maintain→empty→harvest cycle that would trap them in the remote room). A `memory.eligibility.repair` flag (default `true`, opt-out) gates both the home-room and remote-room repair passes so a harvester can skip repairs and avoid diverting energy from the room's flow — queue with `eligibility:{repair:false}` in the spawn memory, or flip a live creep's `memory.eligibility.repair`. Harvesters missing the flag entirely (spawned before it existed) are treated as eligible; only an explicit `false` opts out. Home-room deposit: if a base refiller is in the room (a `worker` with `eligibility.base`, or a `transporter`/`transporter2` hauling energy), the harvester uses pooled mode (`getDepositTarget` with `pool:true`) and unloads at the closest of spawns/extensions/towers/links/storage/terminal(<50k)/factory(<10k); otherwise it uses the tiered order (spawns/extensions > towers > labs > terminal/factory > links/storage) |
 | `worker` | Refills base energy, repairs structures and ramparts, builds construction sites; falls back to upgrading the controller. Eligibility flags in `memory.eligibility` (`base`, `repair`, `ramparts`, `build`) gate which subtasks the creep will pick up. `memory.upgrader: true` (set at spawn) turns every duty off. Pure upgraders (that flag, or all four eligibility flags off) first visit the room's booster lab while they have ≥1200 ticks to live (`production.seekBoost`) |
 | `transporter` | Moves resources between structures (containers, links, terminals, factories, storages, labs). Energy transporters also drain terminal energy above 55k (surplus from inter-room sends; above the 50k top-up level so the two never fight); a load taken from the terminal is never delivered back to it (`memory.collectedFrom`) |
 | `transporter2` | Variant transporter that prioritizes resources currently in its store |
-| `mineralTransporter` | Specialized hauler for lab/factory feeds and storage↔terminal balancing. Collect priorities: drain wrong lab contents > fill input/booster labs > drain output labs > feed factory > drain factory > drain miner containers > balance terminal toward `logistics.terminalTarget` (`getTerminalBalanceJob`: move storage→terminal when >1000 under target, terminal→storage when >5000 over) > loose minerals. See `runMineralTransporter` in `creeps.js` |
+| `mineralTransporter` | Specialized hauler for lab/factory/power spawn feeds and storage↔terminal balancing. Collect priorities: drain wrong lab contents > fill input/booster labs > drain output labs > feed factory > drain factory > feed power spawn (power below 50, or energy below 2500 when there's power and storage is above `powerEnergyFloor`; withdraws just what fits and delivers immediately) > drain miner containers > balance terminal toward `logistics.terminalTarget` (`getTerminalBalanceJob`: move storage→terminal when >1000 under target, terminal→storage when >5000 over) > loose minerals. See `runMineralTransporter` in `creeps.js` |
 | `miner` | Dedicated harvester assigned to a single source; deposits into nearby links or containers. Sets `memory.noShove` while parked on its work tile |
 | `mineralMiner` | Same dispatcher as `miner` but with mineral-tuned body via `getRoleBuild` |
 | `claimer` | Moves to a target room and claims/reserves/attacks the controller |
-| `healer` | Follows a target creep and heals them |
+| `healer` | Follows a target creep (`memory.target` = creep name) at range 1 and heals it when damaged, itself otherwise (`combatHeal` now always follows — it used to stay put while the target was at full HP) |
 | `defender` | Finds and attacks hostile creeps/structures in the current room |
-| `attack` | Moves to a target room and attacks hostile creeps/structures |
+| `attack` | Moves to a target room and attacks hostile creeps/structures. `memory.mode = 'powerBank'` hands it to `power.runAttacker`: attack only the op's bank, only with its healer adjacent and above half HP, and hold below `holdHits` until a hauler is in the room |
 | `ranged` | Ranged-attack variant |
 
 **Room Navigation Helpers:**
@@ -263,6 +267,7 @@ Room management module. Handles per-room operations each tick.
 - `runTowers(room)` - Towers auto-target: hostile creeps > damaged friendly creeps > damaged structures (< 75% health)
 - `runLinks(room)` - Sender links at >=90% of `LINK_CAPACITY` (off cooldown) transfer to the designated `targetLink`, capped to its free space; sends under 100 are skipped
 - `runFactory(room)` - Produces `factory.memory.target` when components are present, up to `outputCap`
+- `runPowerSpawn(room)` - RCL 8: `processPower()` (1 power + 50 energy/tick → GPL) only while effective energy is above `Memory.power.config.powerEnergyFloor` (150k, above the 100k RCL 8 logistics donor floor, so upgrade-sink sharing to RCL 7 rooms gets spare energy first)
 - `runTerminal(room)` - Executes queued market deals (`terminal.memory.deals`), one per tick. All inter-room sending and selling decisions live in `logistics.js`
 
 **Mining:**
@@ -294,6 +299,20 @@ Room management module. Handles per-room operations each tick.
 - `buildSquareBaseRoads(room, spawn)` - Builds an 8-space square road pattern around a spawn
 - `availableExtensions(room)` - Calculates how many more extensions can be built at the current RCL
 - `clearQue(room)` / `getQueueCount(room)` / `getSpawningCount(room)` / `getRespawnCount(room)` - Queue management utilities
+
+### power.js
+
+Power mining from highway rooms, built from existing roles (`attack` in `powerBank` mode, `healer`, `harvester` in `power` mode) with purpose-built bodies via `memory.body` (`util.getCreepBuild`). Power is brought home and processed in power spawns (GPL).
+
+**Bank numbers:** 2M hits, decays after 5000 ticks, reflects 50% of melee damage. Attacker `{MOVE:20, ATTACK:20}` deals 600/tick and takes 300 back; healer `{MOVE:25, HEAL:25}` heals exactly 300. One pair needs ~3300 ticks, so operations run 2–3 pairs (capped by open tiles around the bank). Healers cost 7500 energy, so only RCL 8 rooms are homes. Hauler `{MOVE:25, CARRY:25}` carries 1250.
+
+**Vision:** `intel.update` records `powerBank` (id, pos, power, hits, `decayAt`, open adjacent tiles, `seen`) on any visible highway room. RCL 8 rooms with an observer additionally observe highway rooms within `maxRange` in rotation, one per tick.
+
+**Launch** (every 10 ticks, at most `maxOps` 1 at a time): banks seen within 1500 ticks with ≥ `minPower` (1000) and ≥ 2 open tiles, in a room not flagged hostile, within `maxRange` (5) linear rooms of an RCL 8 home that can afford a healer, where decay leaves time for spawn (150) + travel (50/room) + kill time + hauling margin (300). Best = power ÷ (distance + 1). The op sets `ignoreHostile: 'power'` on the room so other players' miners can't block routing for our replacements/haulers (removed when the op ends).
+
+**Running:** pairs are queued attacker-then-healer (healer `target` = attacker name). A pair is replaced only if it would die before the bank, once a replacement queued now would arrive as it dies. Haulers (`ceil(power/1250)`, max 6) are queued when the bank's remaining hits would last about as long as their spawn + travel; attackers hold below 60k hits until a hauler is in the room. When the bank is gone the op switches to collecting, and ends once no power drops/ruins remain and no hauler in the room carries power (or on timeout 8000 ticks / decay / `cmd.abortPower`). Ending removes queued crew, records the bank in `Memory.power.done` (never relaunched), and fighters retire; haulers deliver and then retire.
+
+**Config:** `Memory.power.config` overrides `DEFAULTS` (`maxRange`, `maxOps`, `minPower`, `maxPairs`, `holdHits`, `maxHaulers`, …) plus `powerEnergyFloor` for processing. Ops live in `Memory.power.ops`, last 20 results in `Memory.power.history`.
 
 ### production.js
 
@@ -538,6 +557,7 @@ util.cleanupMemory()
 intel.cleanup()        // throttled to every 1000 ticks
 intel.update()         // before role logic so routeCallback has fresh data
 rooms.run(...)
+power.run()            // observer scan each tick; ops throttled to every 10 ticks
 production.run()       // before logistics, throttled to every 50 ticks
 logistics.run()        // after rooms.run (deal execution), throttled to every 10 ticks
 creeps.run(...)
