@@ -230,7 +230,11 @@ if(options.containers){
         if(!targets.length && options.sources && resource === RESOURCE_ENERGY) {
             var sources = creep.room.sources
             for(let i = 0; i < sources.length; i++){
-                if(sources[i].energyCapacity === 0){
+                // Skip depleted sources. (This checked energyCapacity, which is
+                // never 0, so an empty source stayed a candidate — and being the
+                // closest, it was re-picked and rejected every tick, pinning
+                // the creep instead of sending it to a source with energy.)
+                if(!sources[i] || sources[i].energy === 0){
                     continue
                 }
                 let takenCount = 0
