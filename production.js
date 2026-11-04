@@ -11,9 +11,12 @@
 //   3. A compound whose two ingredients are both in stock is a candidate.
 //      Candidates are assigned to reactor rooms, highest tier first (convert
 //      what's closest to the goal), preferring the room already holding the
-//      most ingredients. A running job is kept until its compound is no
-//      longer needed or an ingredient is exhausted empire-wide (hysteresis:
-//      starting needs minBatch of each ingredient, continuing needs any).
+//      most ingredients. Exception: an ingredient a running job is starved
+//      of (stock below one input-lab fill) goes first and may preempt, so
+//      the chain's top can't starve its own feeders. A running job is kept
+//      until its compound is no longer needed or an ingredient is exhausted
+//      empire-wide (hysteresis: starting needs minBatch of each ingredient,
+//      continuing needs any).
 //   4. Lab memory (role/resource/amount) is written for each managed room.
 //      Everything downstream already exists: logistics.js turns input/booster
 //      lab assignments into needs and ships ingredients in, rooms.runLabs
@@ -21,7 +24,8 @@
 //
 // Lab layout per room: the input pair with the most labs in range 2 of both;
 // those labs are outputs. Rooms with >= 6 labs react and keep one booster
-// lab; smaller clusters (RCL 6, 3 labs) only boost. Override per room with
+// lab; smaller clusters (3-5 labs) react until the booster compound's stock
+// can fill every room's booster lab, then only boost. Override per room with
 // Memory.production.rooms[name].mode = 'off' | 'react' | 'boost' | 'both'.
 
 const UPGRADE_BOOSTS = [RESOURCE_CATALYZED_GHODIUM_ACID, RESOURCE_GHODIUM_ACID, RESOURCE_GHODIUM_HYDRIDE];
@@ -194,9 +198,10 @@ module.exports = {
         if(!room.storage) return "off";
         let n = this.labs(room).length;
         if(n >= 6) return "both";
-        // 3-5 labs can't both react and boost. React until there's an
-        // upgrade compound to boost with — an empty booster lab is wasted.
-        if(n >= 3) return this.boostAllowed(room) && this.mem().boostCompound ? "boost" : "react";
+        // 3-5 labs can't both react and boost. React until there's enough
+        // upgrade compound to fill every booster lab — an empty booster lab
+        // is wasted, and these rooms are the spare reactors for feeders.
+        if(n >= 3) return this.boostAllowed(room) && this.smallLabsBoost() ? "boost" : "react";
         if(n >= 1) return this.boostAllowed(room) ? "boost" : "off";
         return "off";
     },
@@ -233,6 +238,31 @@ module.exports = {
         return roles;
     },
 
+    // Whether 3-5 lab rooms should boost: the booster compound's empire stock
+    // covers a full booster lab in every room that keeps one. Hysteresis:
+    // switch on at the full amount, off below half. Cached per tick.
+    smallLabsStatus(){
+        if(this._slbTick === Game.time) return this._slb;
+        let m = this.mem();
+        let b = this.config().boost;
+        let c = m.boostCompound;
+        let rooms = this.myRooms().filter(r => {
+            let mode = this.roomMem(r.name).mode;
+            return r.storage && this.labs(r).length && this.boostAllowed(r) && mode !== "off" && mode !== "react";
+        }).length;
+        let need = rooms * b.labAmount;
+        let have = c ? this.stock()[c] || 0 : 0;
+        let on = !!c && (m.smallLabsBoost ? have >= need / 2 : have >= need);
+        m.smallLabsBoost = on;
+        this._slb = { on, have, need };
+        this._slbTick = Game.time;
+        return this._slb;
+    },
+
+    smallLabsBoost(){
+        return this.smallLabsStatus().on;
+    },
+
     // Best upgrade compound for booster labs, with hysteresis.
     boostCompound(){
         let b = this.config().boost;
@@ -248,6 +278,22 @@ module.exports = {
         }
         m.boostCompound = cur;
         return cur;
+    },
+
+    // Products whose shortage is starving a running job: an ingredient of a
+    // job whose empire stock can't fill an input lab, that is itself ready
+    // to react. These outrank tier order so the chain's top can't starve
+    // its own feeders (e.g. GH running dry on G while G never gets a room).
+    blockers(jobs, byProduct){
+        let stock = this.stock();
+        let min = this.config().inputAmount;
+        let out = new Set();
+        for(let j of jobs){
+            for(let r of [j.a, j.b]){
+                if(byProduct[r] && (stock[r] || 0) < min) out.add(r);
+            }
+        }
+        return out;
     },
 
     candidates(req, continuing){
@@ -270,10 +316,15 @@ module.exports = {
     plan(rooms){
         let req = this.requirements();
         let reactors = rooms.filter(r => this.roles(r).in1);
-        let running = new Set(reactors.map(r => this.roomMem(r.name).job).filter(Boolean).map(j => j.product));
+        let jobs = reactors.map(r => this.roomMem(r.name).job).filter(Boolean);
+        let running = new Set(jobs.map(j => j.product));
         let cands = this.candidates(req, running);
         let byProduct = {};
         for(let c of cands) byProduct[c.product] = c;
+        let blockers = this.blockers(jobs, byProduct);
+        for(let c of cands) c.blocker = blockers.has(c.product);
+        cands.sort((x, y) => (y.blocker - x.blocker) || y.tier - x.tier || y.amount - x.amount);
+        let starved = (j) => blockers.has(j.a) || blockers.has(j.b);
 
         let cfg = this.config();
         let count = {};
@@ -310,16 +361,25 @@ module.exports = {
             this.startJob(free.shift(), c);
             take(c.product);
         }
-        // No free reactor but a higher-tier reaction is ready: preempt the
-        // lowest-tier job that has had its minimum run (one per pass), so
-        // long low-tier runs (e.g. 10k OH) can't starve the chain's top.
+        // No free reactor but a better reaction is waiting: preempt one job
+        // that has had its minimum run (one per pass). A higher-tier reaction
+        // replaces a lower-tier one, so long low-tier runs (e.g. 10k OH) can't
+        // starve the chain's top; a blocker replaces a job starved of an
+        // ingredient (it's crawling anyway) or any lower-tier job, never a job
+        // making another blocker. Starved jobs are preempted first.
         let waiting = cands.find(c => !taken.has(c.product));
         if(waiting){
+            let jobOf = (r) => this.roomMem(r.name).job;
             let victim = reactors
-                .filter(r => { let j = this.roomMem(r.name).job; return j && Game.time - j.since >= this.config().minJobTicks && tier(j.product) < waiting.tier; })
-                .sort((x, y) => tier(this.roomMem(x.name).job.product) - tier(this.roomMem(y.name).job.product))[0];
+                .filter(r => {
+                    let j = jobOf(r);
+                    if(!j || Game.time - j.since < cfg.minJobTicks) return false;
+                    if(waiting.blocker) return !blockers.has(j.product) && (starved(j) || tier(j.product) < waiting.tier);
+                    return tier(j.product) < waiting.tier;
+                })
+                .sort((x, y) => (starved(jobOf(y)) - starved(jobOf(x))) || tier(jobOf(x).product) - tier(jobOf(y).product))[0];
             if(victim){
-                console.log("[Production] "+victim.name+": pausing "+this.roomMem(victim.name).job.product+" for higher-tier "+waiting.product);
+                console.log("[Production] "+victim.name+": pausing "+this.roomMem(victim.name).job.product+" for "+(waiting.blocker ? "starved-chain feeder " : "higher-tier ")+waiting.product);
                 this.startJob(victim, waiting);
             }
         }
@@ -437,6 +497,8 @@ module.exports = {
         let base = ["H", "O", "U", "L", "K", "Z", "X"];
         lines.push("Base stock: "+base.map(r => r+" "+Math.round((stock[r] || 0)/1000)+"k").join(", "));
         lines.push("Booster compound: "+(this.mem().boostCompound || "none (no upgrade compound in stock)"));
+        let slb = this.smallLabsStatus();
+        lines.push("3-5 lab rooms: "+(slb.on ? "boosting" : "reacting")+" (booster stock "+slb.have+"/"+slb.need+" to boost)");
         for(let room of this.myRooms().sort((a, b) => a.name.localeCompare(b.name))){
             let labs = this.labs(room);
             if(!labs.length){ lines.push(room.name+": no labs"); continue; }
