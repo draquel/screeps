@@ -515,7 +515,7 @@ Memory.intel.rooms[name] = {
 Configuration lives at the top of `Memory.intel`:
 
 - `Memory.intel.hostileTTL` (default `5000`) — ticks after which `hostile` ages out
-- `Memory.intel.intelMaxAge` (default `20000`) — ticks after which an unvisited room is dropped from intel
+- `Memory.intel.intelMaxAge` (default `20000`) — ticks after which an unvisited room is dropped from intel (entries with `avoid` or `ignoreHostile` are kept)
 - `Memory.intel.username` — auto-populated from any owned spawn on first run
 
 `intel.routeCallback(roomName)` is passed to `Traveler.travelTo` and returns:
@@ -524,7 +524,9 @@ Configuration lives at the top of `Memory.intel`:
 - `2.5` — for Source Keeper rooms (observed via `sourceKeeper:true` or inferred from room-name regex)
 - `undefined` — otherwise, so Traveler's built-in heuristics apply
 
-`intel.cleanup()` runs every 1000 ticks from `main.js` to evict stale rooms.
+`Infinity` rooms are excluded from the `findRoute` room list. If no route exists, Traveler falls back to an unrestricted PathFinder search, which still rejects those rooms (except the origin and destination rooms, or with `allowHostile`), so a fully blocked trip fails instead of cutting through an avoided room.
+
+`intel.cleanup()` runs every 1000 ticks from `main.js` to evict stale rooms; user overrides (`avoid`, `ignoreHostile`) are never evicted.
 
 ### `traffic.js` — intent capture and shove resolution
 

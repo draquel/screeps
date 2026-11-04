@@ -248,8 +248,13 @@ class Traveler {
                     return false;
                 }
             }
-            else if (!options.allowHostile && Traveler.checkAvoid(roomName)
-                && roomName !== destRoomName && roomName !== originRoomName) {
+            else if (!options.allowHostile
+                && roomName !== destRoomName && roomName !== originRoomName
+                && (Traveler.checkAvoid(roomName)
+                    // No route (findRoute failed or wasn't used): still honour
+                    // rooms the routeCallback forbids (intel avoid/hostile),
+                    // so a blocked route fails instead of cutting through them.
+                    || (options.routeCallback && options.routeCallback(roomName) === Number.POSITIVE_INFINITY))) {
                 return false;
             }
             roomsSearched++;

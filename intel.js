@@ -121,6 +121,9 @@ function cleanup() {
     const maxAge = Memory.intel.intelMaxAge || DEFAULT_INTEL_AGE;
     for (const name in Memory.intel.rooms) {
         const r = Memory.intel.rooms[name];
+        // User overrides outlive the scouting data: an avoided room is one
+        // we stop getting vision of, so ageing it out would undo the avoid.
+        if (r.avoid || r.ignoreHostile) continue;
         if (Game.time - (r.lastScouted || 0) > maxAge) {
             delete Memory.intel.rooms[name];
         }
