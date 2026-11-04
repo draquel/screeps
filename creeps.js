@@ -7,6 +7,10 @@ const logistics = require("./logistics");
 const production = require("./production");
 const power = require("./power");
 
+// Loose minerals at least this big are collected before factory work and
+// terminal balancing (smaller ones wait for the low-priority sweep).
+const LOOSE_MINERAL_URGENT = 100;
+
 module.exports = {
   run(creep) {
     //runOrder
@@ -968,12 +972,16 @@ module.exports = {
         let labTarget = this.getLabFillTargetRaw(creep.room);
         if (labTarget) {
             creep.memory.labFillResource = labTarget.resource;
-            work.collectResource(creep, {
+            if (work.collectResource(creep, {
                 storages: true, containers: false, terminals: true,
                 ignoreTerminalThresholds: true,
                 drops: false, tombs: false, links: false, sources: false,
-            }, labTarget.resource);
-            return;
+            }, labTarget.resource)) return;
+            // No usable source (e.g. storage holds less than our free
+            // capacity, which collectResource won't take): deliver what we
+            // already carry, else fall through instead of idling here forever.
+            creep.memory.labFillResource = null;
+            if (this.deliverPartial(creep, labTarget.resource)) return;
         }
 
         // Priority 3: drain output labs above their threshold to storage
@@ -986,16 +994,29 @@ module.exports = {
             return;
         }
 
+        // Priority 3b: sizeable loose minerals (drops decay ~1/1000 per tick,
+        // so they go before factory work and terminal balancing)
+        let urgentLoose = this.getLooseMineralTarget(creep, LOOSE_MINERAL_URGENT);
+        if (urgentLoose) {
+            work.collectResource(creep, {
+                storages: false, containers: false, terminals: false,
+                drops: true, tombs: true, links: false, sources: false,
+            }, urgentLoose);
+            return;
+        }
+
         // Priority 4: feed factory inputs from storage/terminal
         let factoryNeed = this.getFactoryInputNeed(creep.room);
         if (factoryNeed) {
             creep.memory.factoryFeedResource = factoryNeed.resource;
-            work.collectResource(creep, {
+            if (work.collectResource(creep, {
                 storages: true, containers: false, terminals: true,
                 ignoreTerminalThresholds: true,
                 drops: false, tombs: false, links: false, sources: false,
-            }, factoryNeed.resource);
-            return;
+            }, factoryNeed.resource)) return;
+            // Same stall guard as lab fill
+            creep.memory.factoryFeedResource = null;
+            if (this.deliverPartial(creep, factoryNeed.resource)) return;
         }
 
         // Priority 5: drain factory output / stale ingredients to storage
@@ -1054,8 +1075,8 @@ module.exports = {
             return;
         }
 
-        // Priority 8: loose minerals from containers or drops
-        let looseMineral = this.getLooseMineralTarget(creep, roomMineral);
+        // Priority 8: any remaining loose minerals from containers or drops
+        let looseMineral = this.getLooseMineralTarget(creep, 2);
         if (looseMineral) {
             work.collectResource(creep, {
                 storages: false, containers: true, relaxedContainers: true,
@@ -1283,27 +1304,39 @@ getLabFillTarget(creep) {
     return null;
   },
 
-  // Returns the resource type of the best loose mineral target, or null
-  getLooseMineralTarget(creep, roomMineral) {
-    let drops = creep.room.find(FIND_DROPPED_RESOURCES, {
-      filter: (d) => d.resourceType !== RESOURCE_ENERGY,
-    });
-    if (drops.length) return drops[0].resourceType;
+  // Switch to delivery when the creep already carries some of a feed
+  // resource it can't top up. Returns true if it switched.
+  deliverPartial(creep, resource) {
+    if ((creep.store[resource] || 0) === 0) return false;
+    creep.memory.working = true;
+    creep.memory.targetCollect = null;
+    creep.say("🚚 Deliver");
+    return true;
+  },
 
-    let tombs = creep.room.find(FIND_TOMBSTONES, {
-      filter: (t) =>
-        Object.keys(t.store).some(
-          (r) => r !== RESOURCE_ENERGY && t.store[r] > 0,
-        ),
-    });
-    if (tombs.length) {
-      let resource = Object.keys(tombs[0].store).find(
-        (r) => r !== RESOURCE_ENERGY && tombs[0].store[r] > 0,
-      );
-      return resource || null;
+  // Returns the resource type of the largest non-energy drop or tombstone
+  // holding at least minAmount that no other creep has claimed (claimed piles
+  // are skipped by collectResource, so returning one would idle the creep).
+  getLooseMineralTarget(creep, minAmount = 2) {
+    let taken = util.getCreepProp(
+      creep.room.find(FIND_MY_CREEPS, { filter: (c) => c.id !== creep.id }),
+      "targetCollect",
+    );
+    let best = null;
+    for (let d of creep.room.find(FIND_DROPPED_RESOURCES, {
+      filter: (d) => d.resourceType !== RESOURCE_ENERGY && d.amount >= minAmount && !taken.includes(d.id),
+    })) {
+      if (!best || d.amount > best.amount) best = { resource: d.resourceType, amount: d.amount };
     }
+    if (best) return best.resource;
 
-    return null;
+    for (let t of creep.room.find(FIND_TOMBSTONES, { filter: (t) => !taken.includes(t.id) })) {
+      for (let r of Object.keys(t.store)) {
+        if (r === RESOURCE_ENERGY || t.store[r] < minAmount) continue;
+        if (!best || t.store[r] > best.amount) best = { resource: r, amount: t.store[r] };
+      }
+    }
+    return best ? best.resource : null;
   },
   // Returns { lab, resource } for the first lab that contains a resource
   // that doesn't match its assigned memory.resource, or null
