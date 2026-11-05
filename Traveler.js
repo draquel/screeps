@@ -61,10 +61,12 @@ class Traveler {
         if (!options.stuckValue) {
             options.stuckValue = DEFAULT_STUCK_VALUE;
         }
+        let stuckRepath = false;
         if (state.stuckCount >= options.stuckValue && Math.random() > .5) {
             options.ignoreCreeps = false;
             options.freshMatrix = true;
             delete travelData.path;
+            stuckRepath = true;
         }
         // TODO:handle case where creep moved by some other function, but destination is still the same
         // delete path cache if destination is different
@@ -112,7 +114,12 @@ class Traveler {
                 options.returnData.pathfinderReturn = ret;
             }
             travelData.path = Traveler.serializePath(creep.pos, ret.path, color, options.visualize !== false);
-            state.stuckCount = 0;
+            // Only a stuck-triggered repath (which routes around creeps) clears
+            // the stuck count. Resetting on every new path meant creeps that
+            // repath each tick (combat roles, repath: 1) never accumulated
+            // stuckCount, so they never routed around a noShove blocker.
+            // Destination changes still start fresh.
+            if (stuckRepath || !this.samePos(state.destination, destination)) state.stuckCount = 0;
         }
         this.serializeState(creep, destination, state, travelData);
         if (!travelData.path || travelData.path.length === 0) {
@@ -572,6 +579,7 @@ class Traveler {
             state.cpu = 0;
             state.cpuWindowStart = Game.time;
             state.destination = destination;
+            state.stuckCount = 0;
         }
         return state;
     }

@@ -495,6 +495,7 @@ Vendored from [bonzaiferroni/Traveler](https://github.com/bonzaiferroni/Traveler
    - `REPORT_CPU_THRESHOLD = 2000`
    - `CPU_REPORT_WINDOW_TICKS = 200` — `state.cpu` is reset to 0 in `deserializeState` when more than this many ticks have passed since `cpuWindowStart` (stored at `state[STATE_CPU_WINDOW_START]`), so when re-enabled it represents recent average CPU rate rather than lifetime accumulation.
    - Backward-compatible: legacy `_trav` arrays without index 7 fall back to "window starts now."
+5. `stuckCount` survives routine repaths. Upstream resets it on every new path, so creeps that repath every tick (`REPATH_BY_ROLE` combat roles, `repath: 1`) never reached `stuckValue`, never took the creep-aware fallback path, and pushed forever into a `noShove` blocker (seen with power attackers queued behind the pair already on the bank). Now only a stuck-triggered repath or a destination change resets it; `deserializeState` initialises it to 0 for new travel state.
 
 ### `intel.js` — room observation and route filtering
 
