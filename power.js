@@ -37,6 +37,8 @@ const DEFAULTS = {
     maxHaulers: 6,
     timeout: 8000,          // abandon an operation after this many ticks
     seenWithin: 1500,       // only launch on banks observed this recently
+    homeEnergyFloor: 150000, // a home must keep this much effective energy
+                            // (storage + spare terminal) after paying for the crew
 };
 
 const ATTACKER_BODY = { MOVE: 20, ATTACK: 20 };
@@ -257,6 +259,13 @@ module.exports = {
         let homes = this.homes().filter(r => r.energyCapacityAvailable >= healerCost);
         if(!homes.length) return;
 
+        let logistics = require("./logistics");
+        let bodyCost = (body) => Object.keys(body).reduce((s, p) => s + body[p] * BODYPART_COST[p.toLowerCase()], 0);
+        let pairCost = bodyCost(ATTACKER_BODY) + bodyCost(HEALER_BODY);
+        let haulerCost = bodyCost({ MOVE: cfg.haulerCarry, CARRY: cfg.haulerCarry });
+        let energy = {};
+        for(let h of homes) energy[h.name] = logistics.effectiveEnergy(h);
+
         let best = null;
         for(let name of Object.keys(intelRooms)){
             let r = intelRooms[name];
@@ -274,11 +283,17 @@ module.exports = {
             }else if(r.hostile && !r.ignoreHostile && Game.time - (r.hostileSeen || 0) < (Memory.intel.hostileTTL || 5000)){
                 continue;
             }
+            let pairs = Math.max(cfg.minPairs, Math.min(cfg.maxPairs, b.open));
+            let haulers = Math.min(cfg.maxHaulers, Math.max(1, Math.ceil(b.power / (cfg.haulerCarry * CARRY_CAPACITY))));
+            let cost = pairs * pairCost + haulers * haulerCost;
+            // Nearest home that can pay for the crew and stay above the floor
+            // (ties: the richer one) — a crew drains ~40k energy and the
+            // spawn queue, so a room already short on energy can't host it.
             let home = homes.map(h => ({ h, d: Game.map.getRoomLinearDistance(h.name, name) }))
-                .filter(x => x.d <= cfg.maxRange).sort((x, y) => x.d - y.d)[0];
+                .filter(x => x.d <= cfg.maxRange && energy[x.h.name] >= cfg.homeEnergyFloor + cost)
+                .sort((x, y) => x.d - y.d || energy[y.h.name] - energy[x.h.name])[0];
             if(!home) continue;
             let travel = (home.d + 1) * cfg.ticksPerRoom;
-            let pairs = Math.max(cfg.minPairs, Math.min(cfg.maxPairs, b.open));
             let killTicks = b.hits / (pairs * PAIR_DPS);
             let decayLeft = b.decayAt - Game.time;
             if(decayLeft < cfg.spawnTicks + travel + killTicks + cfg.haulMargin) continue;
