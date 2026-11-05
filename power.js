@@ -264,7 +264,16 @@ module.exports = {
             if(!b || ops[b.id] || (this.mem().done && this.mem().done[b.id])) continue;
             if(Game.time - b.seen > cfg.seenWithin) continue;
             if(b.power < cfg.minPower || b.open < cfg.minPairs) continue;
-            if(r.avoid || (r.hostile && !r.ignoreHostile && Game.time - (r.hostileSeen || 0) < (Memory.intel.hostileTTL || 5000))) continue;
+            if(r.avoid) continue;
+            if(require("./intel").isHighwayByName(name)){
+                // Highway rooms have no controller, so "hostile" there is just
+                // other players' creeps passing through — constant on busy
+                // highways, and the 5000-tick TTL would outlast the bank. What
+                // matters is whether someone else is already on this bank.
+                if(b.hits < POWER_BANK_HITS) continue;
+            }else if(r.hostile && !r.ignoreHostile && Game.time - (r.hostileSeen || 0) < (Memory.intel.hostileTTL || 5000)){
+                continue;
+            }
             let home = homes.map(h => ({ h, d: Game.map.getRoomLinearDistance(h.name, name) }))
                 .filter(x => x.d <= cfg.maxRange).sort((x, y) => x.d - y.d)[0];
             if(!home) continue;
