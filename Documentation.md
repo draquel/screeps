@@ -523,7 +523,7 @@ Configuration lives at the top of `Memory.intel`:
 
 `intel.routeCallback(roomName)` is passed to `Traveler.travelTo` and returns:
 
-- `Infinity` — if `avoid` is set, or `hostile` was observed within `hostileTTL`
+- `Infinity` — if `avoid` is set, or `hostile` was observed within `hostileTTL` (hostility is ignored in highway rooms — it's only passing traffic there — and in rooms we own; use `avoid` for a real threat in either)
 - `2.5` — for Source Keeper rooms (observed via `sourceKeeper:true` or inferred from room-name regex)
 - `undefined` — otherwise, so Traveler's built-in heuristics apply
 

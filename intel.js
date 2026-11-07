@@ -6,7 +6,8 @@
 // Records owner / reservation / hostility / SK status into Memory.intel.rooms[name].
 // Exports a routeCallback(roomName) suitable for Traveler.travelTo, which:
 //   - Forbids rooms marked avoid: true (user override).
-//   - Forbids rooms recently observed hostile (within Memory.intel.hostileTTL).
+//   - Forbids rooms recently observed hostile (within Memory.intel.hostileTTL),
+//     except highway rooms and rooms we own.
 //   - Discourages Source Keeper rooms with a 2.5x cost.
 //   - Returns undefined otherwise so Traveler's built-in heuristics apply.
 
@@ -105,7 +106,14 @@ function routeCallback(roomName) {
         // ignoreHostile is a per-room override: observation still records
         // hostility (we keep the visibility), but routing treats the room
         // as safe. Useful for "I know it's hostile, but I have no other path".
+        // Hostility doesn't block two kinds of room: highways (no controller,
+        // so "hostile" is just other players' creeps passing — near-constant
+        // on busy highways, and it stranded power haulers on a border) and
+        // rooms we own (an invader visit would otherwise wall off our own
+        // room for hostileTTL ticks). Use avoid for a real threat there.
+        const me = Memory.intel.username;
         if (r.hostile && !r.ignoreHostile
+                && !isHighwayByName(roomName) && !(me && r.owner === me)
                 && (Game.time - (r.hostileSeen || 0)) < (Memory.intel.hostileTTL || DEFAULT_HOSTILE_TTL)) {
             return Number.POSITIVE_INFINITY;
         }
