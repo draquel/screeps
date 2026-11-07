@@ -94,6 +94,7 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | Function | Description |
 |----------|-------------|
 | `sellResources(room, resource, amount)` | Sell from terminal; defaults to the room's native mineral if `resource` is null |
+| `buyEnergy(room, amount, maxPrice, preview)` | Buy `amount` net energy (landed after the transfer fee) into the room's terminal, cheapest effective price (credits ÷ net energy) first, skipping orders above `maxPrice` effective. Without `maxPrice` (or with `preview: true`) it only prints the plan. Deals are queued on the terminal (one per cooldown); fees must fit the terminal's energy (plus net gains from earlier deals in the plan), purchases must fit credits and terminal space |
 | `sendEnergy(from, to, amount)` | Send energy between two owned rooms' terminals. Validates terminals/cooldown/destination space and checks `amount` + transfer cost against the source terminal; `amount = null` sends the max affordable. Logs the outcome and returns the result code |
 | `runTest(creep)` | Diagnostic dump for a creep (currently focused on mineralTransporter logic) |
 | `logistics()` | Print the logistics report: each room's energy band state, needs, surplus, empire totals vs sell caps, recent sends/sells |
@@ -295,6 +296,7 @@ Room management module. Handles per-room operations each tick.
 **Utilities:**
 
 - `sellResources(room, amount)` - Sells minerals from the room's terminal on the market
+- `buyEnergy(room, amount, maxPrice, preview)` - Plans/queues energy purchases by effective price (see `cmd.buyEnergy`)
 - `sellForeignResources(room, resource, amount, minPrice)` - Queues buy-order deals within the terminal's energy budget, skipping orders below `minPrice`; returns `true` if anything was queued
 - `getSources(room)` / `getMineral(room)` / `getExtractor(room)` / `getMineralContainer(room)` - Room structure lookups
 - `buildSquareBaseRoads(room, spawn)` - Builds an 8-space square road pattern around a spawn

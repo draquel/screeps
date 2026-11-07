@@ -46,6 +46,14 @@ module.exports = {
       }
       rooms.sellForeignResources(room,resource,amount)
     },
+    // Buy `amount` net energy into a room's terminal, cheapest effective price
+    // (credits per energy landed, after the transfer fee) first. Omit
+    // maxPrice (or pass preview=true) to just print the plan.
+    // e.g. Game.cmd.buyEnergy('E19S66', 50000)        -> plan only
+    //      Game.cmd.buyEnergy('E19S66', 50000, 3.5)   -> queue deals
+    buyEnergy(room, amount = 10000, maxPrice = null, preview = false){
+      return rooms.buyEnergy(room, amount, maxPrice, preview)
+    },
     runTest(creep){ util.runTest(creep) },
 
     // Logistics (logistics.js): demand-driven sharing between my terminals.

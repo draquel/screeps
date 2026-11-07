@@ -380,6 +380,73 @@ module.exports = {
     console.log("["+room.name+"] sellForeignResources: No affordable deals scheduled for "+resource);
     return false;
 },
+    // Buys `amount` net energy (what lands in the terminal after the
+    // transfer fee) for `room`, cheapest effective price first. Effective
+    // price = credits paid / net energy gained, so a cheap order far away
+    // can lose to a pricier one nearby. Orders above `maxPrice` effective are
+    // skipped. Without maxPrice (or with preview) it only prints the plan.
+    // Deals are queued on the terminal (one per cooldown) like sells. Each
+    // deal's fee must be covered by the terminal's energy at the time, so the
+    // budget is current terminal energy plus net gains from earlier deals.
+    buyEnergy(room, amount = 10000, maxPrice = null, preview = false) {
+    room = this.checkRoomObj(room);
+    if (!room || !room.terminal) { console.log("buyEnergy: no terminal"); return false; }
+    let terminal = room.terminal;
+
+    let orders = Game.market.getAllOrders({ type: ORDER_SELL, resourceType: RESOURCE_ENERGY })
+        .map(o => {
+            let avail = Math.min(o.amount, o.remainingAmount);
+            let fee = Game.market.calcTransactionCost(1000, room.name, o.roomName) / 1000;
+            return { o, avail, fee, eff: fee < 1 ? o.price / (1 - fee) : Infinity };
+        })
+        .filter(x => x.avail > 0 && x.eff < Infinity)
+        .sort((a, b) => a.eff - b.eff);
+    if (!orders.length) { console.log("buyEnergy: no energy sell orders"); return false; }
+
+    let dryRun = preview || maxPrice == null;
+    if (maxPrice != null) orders = orders.filter(x => x.eff <= maxPrice);
+    if (!orders.length) { console.log("buyEnergy: no orders at <= "+maxPrice+" credits per net energy"); return false; }
+
+    let budget = terminal.store[RESOURCE_ENERGY] || 0;
+    let space = terminal.store.getFreeCapacity();
+    let credits = Game.market.credits;
+    let left = amount, spent = 0, net = 0, fees = 0, plan = [];
+
+    for (let x of orders) {
+        if (left <= 0 || budget <= 0 || space <= 0 || credits - spent <= 0) break;
+        let want = Math.min(x.avail, Math.ceil(left / (1 - x.fee)));
+        // shrink until the fee, the credits and the terminal space all fit
+        let fits = (n) => {
+            let f = Game.market.calcTransactionCost(n, room.name, x.o.roomName);
+            return f <= budget && n * x.o.price <= credits - spent && n - f <= space;
+        };
+        if (!fits(want)) {
+            let lo = 1, hi = want, best = 0;
+            while (lo <= hi) { let mid = Math.floor((lo + hi) / 2); if (fits(mid)) { best = mid; lo = mid + 1; } else { hi = mid - 1; } }
+            want = best;
+        }
+        if (want <= 0) continue;
+        let fee = Game.market.calcTransactionCost(want, room.name, x.o.roomName);
+        let gain = want - fee;
+        plan.push({ id: x.o.id, amount: want, price: x.o.price, fee, from: x.o.roomName, eff: x.eff });
+        spent += want * x.o.price;
+        fees += fee;
+        net += gain;
+        left -= gain;
+        budget += gain;
+        space -= gain;
+    }
+
+    console.log("["+room.name+"] buyEnergy "+(dryRun ? "PLAN (not queued" + (maxPrice == null ? "; pass maxPrice to buy" : "") + ")" : "QUEUED")+": "
+        + plan.length+" deal(s), buy "+(net + fees)+", fees "+fees+"e, net +"+net+"e for "+spent.toFixed(0)+" credits ("
+        + (net ? (spent / net).toFixed(3) : "-")+"/net energy; have "+Math.round(credits)+")");
+    for (let p of plan) {
+        console.log("    "+p.amount+" @ "+p.price+" from "+p.from+" (fee "+p.fee+"e, effective "+p.eff.toFixed(3)+")");
+        if (!dryRun) terminal.addDeal({ id: p.id, amount: p.amount });
+    }
+    if (!plan.length) console.log("    nothing affordable (terminal energy "+(terminal.store[RESOURCE_ENERGY] || 0)+", free "+terminal.store.getFreeCapacity()+")");
+    return !dryRun && plan.length > 0;
+},
     sellResources(room, amount = 10000) {
     room = this.checkRoomObj(room);
     if (room.terminal == null) return;
