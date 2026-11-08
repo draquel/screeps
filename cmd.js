@@ -86,6 +86,31 @@ module.exports = {
       console.log(lines.join('\n'))
       return OK
     },
+    // Power creeps (powerCreeps.js): operators spawn, renew and use powers in
+    // their home room on their own. Creating one and spending GPL points is
+    // manual. Tunables: Memory.powerCreepConfig (overrides powerCreeps.DEFAULTS).
+    powerCreeps() { return require('./powerCreeps').report() },
+    // Create an operator (costs 1 GPL point) and optionally pin its home room.
+    createOperator(name, room) {
+      const r = PowerCreep.create(name, POWER_CLASS.OPERATOR)
+      if(r !== OK){ console.log('createOperator: failed ('+r+')'+(r === ERR_NOT_ENOUGH_RESOURCES ? ' - no free GPL point' : '')); return r }
+      if(room) require('./powerCreeps').mem(name).home = room
+      console.log('createOperator: '+name+' created'+(room ? ', home '+room : ' (home auto-assigned)'))
+      return r
+    },
+    // Move an operator to another home room (it walks there; must be RCL 8 with a power spawn to renew).
+    assignPowerCreep(name, room) {
+      require('./powerCreeps').mem(name).home = room
+      console.log('power creep '+name+' home -> '+room)
+    },
+    // Spend a GPL point on a power, e.g. cmd.upgradePowerCreep('Op1', PWR_OPERATE_EXTENSION)
+    upgradePowerCreep(name, power) {
+      const pc = Game.powerCreeps[name]
+      if(!pc){ console.log('no power creep '+name); return ERR_NOT_FOUND }
+      const r = pc.upgrade(power)
+      console.log('upgradePowerCreep '+name+' '+power+': '+(r === OK ? 'OK' : 'failed ('+r+')'+(r === ERR_NOT_ENOUGH_RESOURCES ? ' - no free GPL point' : r === ERR_FULL ? ' - power maxed, or creep level too low for the next level' : r === ERR_INVALID_ARGS ? ' - not a power for this class' : '')))
+      return r
+    },
     // Abandon the current power operation for a bank id (crew retire).
     abortPower(bankId) {
       const p = require('./power')

@@ -13,6 +13,7 @@ A bot for the online MMO [Screeps World](https://www.screeps.com/). Code is depl
 | `creeps.combat.js` | Combat action functions (attack, heal, claim, etc.) |
 | `rooms.js` | Room management (towers, links, spawning, mining, labs, factory, terminal) |
 | `power.js` | Power mining — observer scanning, power bank operations (attacker/healer pairs, haulers), crew cleanup |
+| `powerCreeps.js` | Power creeps (operators) — spawn/renew at the home power spawn, enable the controller, use powers by priority, manage ops |
 | `production.js` | Production planner — stockpile goals → lab reaction jobs, booster labs, upgrader boosting |
 | `logistics.js` | Empire resource sharing — per-room needs/surplus ledger, terminal broker, overflow selling |
 | `market.js` | In-game market order management |
@@ -38,7 +39,7 @@ The game loop entry point. Each tick it:
 
 1. Loads utility functions onto `Game.util` and console API onto `Game.cmd`
 2. Applies all prototype extensions via `screeps.prototype.load()`
-3. Calls `traffic.install()` to (re)wrap `Creep.prototype.move` for intent capture
+3. Calls `traffic.install()` to (re)wrap `Creep.prototype.move` and `PowerCreep.prototype.move` for intent capture
 4. Cleans up stale memory (dead creeps, abandoned rooms); every 1000 ticks also runs `intel.cleanup()`
 5. Calls `intel.update()` to refresh `Memory.intel.rooms` for visible rooms (powers the route filter)
 6. Runs room operations for each owned room
@@ -46,7 +47,8 @@ The game loop entry point. Each tick it:
 8. Calls `production.run()` — every 50 ticks, assigns lab reaction jobs and booster compounds (before logistics so new lab assignments become needs the same tick)
 9. Calls `logistics.run()` — every 10 ticks, matches room needs to surplus and sends via terminals (after room ops so queued deals are already executing)
 10. Runs creep operations for each owned creep
-11. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
+11. Calls `powerCreeps.run()` — operators spawn/renew and use powers (their moves are captured by `traffic.js` like creep moves)
+12. Calls `traffic.resolve()` to issue queued moves with idle-blocker shoves
 
 The ordering matters: `traffic.install` must run after `proto.load` each tick (the prototype loader can reset the wrapper), `intel.update` must run before role logic so `intel.routeCallback` has fresh data, and `traffic.resolve` must run last so it sees every intent captured during the role passes.
 
@@ -101,6 +103,10 @@ Console API exposed as `Game.cmd`. Provides shorthand functions for managing cre
 | `production()` | Print the production report: goals vs stock, amounts still to make, base mineral stock, per-room lab mode/job/booster, upgraders boosted, missing mineralTransporters |
 | `power()` | Print the power report: RCL 8 homes (observer flag), known banks, active operation crew counts, recent results |
 | `nukers()` | Nuker load status per room (energy/300k, G/5000, cooldown) and whether nukers may take G right now |
+| `powerCreeps()` | Power creep report: GPL level/progress, unspent GPL points, each operator's home, state (ttl, ops) and powers with cooldowns |
+| `createOperator(name, room)` | `PowerCreep.create` an operator (1 GPL point); `room` pins its home, otherwise auto-assigned |
+| `assignPowerCreep(name, room)` | Change an operator's home room (needs RCL 8 + power spawn) |
+| `upgradePowerCreep(name, power)` | Spend a GPL point on a power, e.g. `PWR_OPERATE_EXTENSION` |
 | `abortPower(bankId)` | End a power operation now (queued crew removed, fighters retire, haulers finish delivering) |
 | `goal(resource, amount)` | Set an empire stockpile goal (`Memory.production.config.goals`); `amount` 0/null removes it |
 | `labMode(room, mode)` | Lab usage for a room: `auto` (default), `off` (planner leaves the labs alone), `react`, `boost`, `both` |
@@ -317,6 +323,27 @@ Power mining from highway rooms, built from existing roles (`attack` in `powerBa
 
 **Config:** `Memory.power.config` overrides `DEFAULTS` (`maxRange`, `maxOps`, `minPower`, `maxPairs`, `holdHits`, `maxHaulers`, …) plus `powerEnergyFloor` for processing. Ops live in `Memory.power.ops`, last 20 results in `Memory.power.history`.
 
+### powerCreeps.js
+
+Runs every operator (`Game.powerCreeps`, class `operator`) each tick. Creating operators and spending GPL points is manual (`cmd.createOperator`, `cmd.upgradePowerCreep`); everything else is automatic. A GPL level buys one point: 1 to create an operator, 1 per power level.
+
+**Home** (`Memory.powerCreeps[name].home`): set by `createOperator`/`assignPowerCreep`, else auto-assigned to an RCL 8 room with a power spawn that no other operator calls home.
+
+**Each tick:** not alive → spawn at the home power spawn (skipped during the engine's `spawnCooldownTime`); `ticksToLive` < `renewAt` (500) → walk to the power spawn and renew; outside home → walk home; controller not power-enabled → `enableRoom`. Then the first usable power, in priority order:
+
+1. **Operate Tower** — hostiles in the room, a tower without the effect
+2. **Operate Extension** — `energyAvailable` < `extensionFill` (50%) of capacity, storage (or terminal) holds ≥ `extensionMinStorage` (20k) energy
+3. **Regen Source** — a source without the effect
+4. **Operate Spawn** — spawn queue ≥ `spawnQueueMin` (2), a spawn without the effect
+5. **Operate Lab** — the room has a production job, an output lab without the effect
+6. **Generate Ops** — off cooldown and the operator has free capacity
+
+A power needs to be learned, off cooldown, enabled in `config.powers`, and its ops carried; if the ops aren't carried but the terminal/storage holds enough, the operator withdraws them first (up to `opsKeep`). Generate Ops is also used while walking to another power's target. Idle: ops above `opsKeep` (300) go to the terminal/storage, and the operator parks on a free off-road tile 2–3 from storage (`mem.park`, re-picked when built on or occupied; falls back to range 3 of storage if none) so it doesn't block haulers.
+
+**Not used by default:** Operate Factory (permanently sets the factory's level), Operate Storage/Terminal/Observer/Power, Regen Mineral — enable via `config.powers`.
+
+**Config:** `Memory.powerCreepConfig` deep-merges over `DEFAULTS` (`renewAt`, `opsKeep`, `extensionFill`, `extensionMinStorage`, `spawnQueueMin`, `powers: { [PWR_*]: true|false }`). Errors in one operator are caught and logged so they can't break the main loop.
+
 ### production.js
 
 Phase 2 of the resource plan: goal-driven lab production, focused on GCL. Upgrade boosts (GH +50%, GH2O +80%, XGH2O +100% `upgradeController` effectiveness) multiply GCL per energy without costing more energy per tick, so the default goal is **10k XGH2O** and pure upgraders are boosted with the best compound in stock. Acts every `runInterval` (50) ticks; all tunables in `DEFAULTS`, overridable via `Memory.production.config` (`goals` replaces rather than merges).
@@ -498,6 +525,7 @@ Vendored from [bonzaiferroni/Traveler](https://github.com/bonzaiferroni/Traveler
    - `CPU_REPORT_WINDOW_TICKS = 200` — `state.cpu` is reset to 0 in `deserializeState` when more than this many ticks have passed since `cpuWindowStart` (stored at `state[STATE_CPU_WINDOW_START]`), so when re-enabled it represents recent average CPU rate rather than lifetime accumulation.
    - Backward-compatible: legacy `_trav` arrays without index 7 fall back to "window starts now."
 5. `stuckCount` survives routine repaths. Upstream resets it on every new path, so creeps that repath every tick (`REPATH_BY_ROLE` combat roles, `repath: 1`) never reached `stuckValue`, never took the creep-aware fallback path, and pushed forever into a `noShove` blocker (seen with power attackers queued behind the pair already on the bank). Now only a stuck-triggered repath or a destination change resets it; `deserializeState` initialises it to 0 for new travel state.
+6. `addCreepsToMatrix` (the stuck-repath matrix) also marks power creeps. Upstream only adds `FIND_CREEPS`, so a parked operator was invisible to stuck repaths and creeps kept pathing into it.
 
 ### `intel.js` — room observation and route filtering
 
@@ -533,12 +561,12 @@ Configuration lives at the top of `Memory.intel`:
 
 ### `traffic.js` — intent capture and shove resolution
 
-`traffic.install()` wraps `Creep.prototype.move`. Instead of executing immediately, the wrapper captures `(creep, dir)` into `Game._trafficIntents` (per-tick, on `Game` not `Memory`). Pulling (`move(otherCreep)`) and fatigued creeps short-circuit unwrapped. Directions outside 1..8 are passed through to the original move without being captured.
+`traffic.install()` wraps `Creep.prototype.move` and `PowerCreep.prototype.move`. Instead of executing immediately, the wrapper captures `(creep, dir)` into `Game._trafficIntents` (per-tick, on `Game` not `Memory`, keyed by object id since a power creep can share a creep's name). Pulling (`move(otherCreep)`) and fatigued creeps short-circuit unwrapped. Directions outside 1..8 are passed through to the original move without being captured.
 
 After all roles have run, `traffic.resolve()` runs:
 
-1. **Idle blocker shove**: for each captured intent, if the destination tile holds a friendly creep with no intent of its own and no `noShove` flag, queue a one-tile shove for that blocker. Shove direction prefers non-road tiles and tiles still in range of the blocker's `memory.target` so the shove doesn't waste useful work.
-2. **Issue moves**: for every intent (original + shoves), call the saved `originalMove`. Native Screeps resolves swaps and conga lines atomically when both creeps have intents this tick, so we don't need explicit swap logic.
+1. **Idle blocker shove**: for each captured intent, if the destination tile holds a friendly creep or power creep with no intent of its own and no `noShove` flag, queue a one-tile shove for that blocker. Shove direction prefers non-road tiles and tiles still in range of the blocker's `memory.target` so the shove doesn't waste useful work.
+2. **Issue moves**: for every intent (original + shoves), call the saved original move for the object's class. Native Screeps resolves swaps and conga lines atomically when both creeps have intents this tick, so we don't need explicit swap logic.
 
 ### Stationary roles must opt out
 

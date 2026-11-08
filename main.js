@@ -8,6 +8,7 @@ const intel = require('./intel');
 const logistics = require('./logistics');
 const production = require('./production');
 const power = require('./power');
+const powerCreeps = require('./powerCreeps');
 
 module.exports.loop = function () {
     Game.util = require('./util');
@@ -43,6 +44,9 @@ module.exports.loop = function () {
     for(let name in Game.creeps) {
         creeps.run(Game.creeps[name]);
     }
+
+    //Power creeps (operators): spawn/renew, use powers, manage ops
+    powerCreeps.run();
 
     //Resolve queued movement intents (shoves, etc.)
     traffic.resolve();
