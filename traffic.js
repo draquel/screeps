@@ -14,6 +14,10 @@
 // Opt-out: a creep with memory.noShove = true is never shoved. Stationary roles
 // (miner on container, upgrader on link) should set this on arrival so they
 // aren't bumped off their work tile.
+//
+// Power creeps take part too: their move() is wrapped the same way, they count
+// as blockers, and an idle one can be shoved. Intents are keyed by object id
+// because a power creep may share a name with a creep.
 
 const DIR_OFFSETS = {
     [TOP]:          [ 0,-1], [TOP_RIGHT]:    [ 1,-1],
@@ -24,6 +28,11 @@ const DIR_OFFSETS = {
 const ALL_DIRS = [TOP,TOP_RIGHT,RIGHT,BOTTOM_RIGHT,BOTTOM,BOTTOM_LEFT,LEFT,TOP_LEFT];
 
 let originalMove = null;
+let originalPcMove = null;
+
+function creepsAt(pos) {
+    return pos.lookFor(LOOK_CREEPS).concat(pos.lookFor(LOOK_POWER_CREEPS));
+}
 
 function offsetPos(pos, dir) {
     const offset = DIR_OFFSETS[dir];
@@ -35,7 +44,7 @@ function offsetPos(pos, dir) {
     return new RoomPosition(x, y, pos.roomName);
 }
 
-function passable(pos, ignoreName) {
+function passable(pos, ignoreId) {
     const terrain = Game.map.getRoomTerrain(pos.roomName).get(pos.x, pos.y);
     if (terrain === TERRAIN_MASK_WALL) return false;
     const structs = pos.lookFor(LOOK_STRUCTURES);
@@ -49,8 +58,8 @@ function passable(pos, ignoreName) {
     for (const cs of sites) {
         if (cs.my && OBSTACLE_OBJECT_TYPES.indexOf(cs.structureType) >= 0) return false;
     }
-    for (const c of pos.lookFor(LOOK_CREEPS)) {
-        if (c.name !== ignoreName) return false;
+    for (const c of creepsAt(pos)) {
+        if (c.id !== ignoreId) return false;
     }
     return true;
 }
@@ -64,7 +73,7 @@ function findShoveDir(blocker, requester) {
         const next = offsetPos(blocker.pos, dir);
         if (!next) continue;
         if (next.isEqualTo(requester.pos)) continue;       // never push into the mover
-        if (!passable(next, blocker.name)) continue;
+        if (!passable(next, blocker.id)) continue;
         let score = 1;
         const onRoad = next.lookFor(LOOK_STRUCTURES)
             .some(s => s.structureType === STRUCTURE_ROAD);
@@ -78,26 +87,35 @@ function findShoveDir(blocker, requester) {
     return best;
 }
 
-function install() {
-    if (Creep.prototype.move._trafficWrapped) return;
-    originalMove = Creep.prototype.move;
+function wrapMove(orig) {
     const wrapped = function(direction) {
         // Pulling passes a Creep, not a direction – let it through unwrapped.
         if (typeof direction !== 'number') {
-            return originalMove.call(this, direction);
+            return orig.call(this, direction);
         }
         // Reject anything outside 1..8 (NaN, 0, fractional, etc.) so we never
         // capture an intent the resolver or engine can't act on.
         if (!Number.isInteger(direction) || direction < 1 || direction > 8) {
-            return originalMove.call(this, direction);
+            return orig.call(this, direction);
         }
         if (this.fatigue > 0) return ERR_TIRED;
         Game._trafficIntents = Game._trafficIntents || {};
-        Game._trafficIntents[this.name] = { creep: this, dir: direction };
+        Game._trafficIntents[this.id] = { creep: this, dir: direction };
         return OK;
     };
     wrapped._trafficWrapped = true;
-    Creep.prototype.move = wrapped;
+    return wrapped;
+}
+
+function install() {
+    if (!Creep.prototype.move._trafficWrapped) {
+        originalMove = Creep.prototype.move;
+        Creep.prototype.move = wrapMove(originalMove);
+    }
+    if (typeof PowerCreep !== 'undefined' && !PowerCreep.prototype.move._trafficWrapped) {
+        originalPcMove = PowerCreep.prototype.move;
+        PowerCreep.prototype.move = wrapMove(originalPcMove);
+    }
 }
 
 function resolve() {
@@ -106,24 +124,26 @@ function resolve() {
     // Pass 1: for every intent, if the destination is held by an idle friendly
     // creep, give that creep a shove. Creeps that already have an intent will
     // vacate naturally this tick (Screeps resolves the move chain atomically).
-    const initialNames = Object.keys(intents);
-    for (const name of initialNames) {
-        const { creep, dir } = intents[name];
+    const initialIds = Object.keys(intents);
+    for (const id of initialIds) {
+        const { creep, dir } = intents[id];
         const target = offsetPos(creep.pos, dir);
         if (!target) continue;
-        const blocker = target.lookFor(LOOK_CREEPS).find(c => c.name !== creep.name);
+        const blocker = creepsAt(target).find(c => c.id !== creep.id);
         if (!blocker || !blocker.my) continue;
-        if (intents[blocker.name]) continue;               // already moving
+        if (intents[blocker.id]) continue;                 // already moving
         if (blocker.memory && blocker.memory.noShove) continue;
         const shoveDir = findShoveDir(blocker, creep);
         if (shoveDir != null) {
-            intents[blocker.name] = { creep: blocker, dir: shoveDir, shoved: true };
+            intents[blocker.id] = { creep: blocker, dir: shoveDir, shoved: true };
         }
     }
 
     // Pass 2: issue real moves.
-    for (const name in intents) {
-        originalMove.call(intents[name].creep, intents[name].dir);
+    for (const id in intents) {
+        const { creep, dir } = intents[id];
+        const isPc = typeof PowerCreep !== 'undefined' && creep instanceof PowerCreep;
+        (isPc ? originalPcMove : originalMove).call(creep, dir);
     }
 }
 
