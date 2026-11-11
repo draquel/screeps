@@ -340,6 +340,8 @@ Runs every operator (`Game.powerCreeps`, class `operator`) each tick. Creating o
 
 A power needs to be learned, off cooldown, enabled in `config.powers`, and its ops carried; if the ops aren't carried but the terminal/storage holds enough, the operator withdraws them first (up to `opsKeep`). Generate Ops is also used while walking to another power's target. Idle: ops above `opsKeep` (300) go to the terminal/storage, and the operator parks on a free off-road tile 2–3 from storage (`mem.park`, re-picked when built on or occupied; falls back to range 3 of storage if none) so it doesn't block haulers.
 
+**Regen-aware miners:** when a miner spawns, `util.minerRegenWork` checks the room's Regen Source level (`util.regenSourceLevel`: the highest active effect on a source, or the power level of any operator homed there, unless the power is disabled in config). If the source would out-produce the miner's table body, it sets `memory.work` to ceil((capacity/300 + effect/period) / 2) + 1 WORK. That's 8 at L1 and 15 at L5, capped by the room's energy capacity and 50 parts. `util.getCreepBuild` adds the extra WORK to the role body. It's recomputed at every spawn, so existing miners resize when they respawn.
+
 **Not used by default:** Operate Factory (permanently sets the factory's level), Operate Storage/Terminal/Observer/Power, Regen Mineral — enable via `config.powers`.
 
 **Config:** `Memory.powerCreepConfig` deep-merges over `DEFAULTS` (`renewAt`, `opsKeep`, `extensionFill`, `extensionMinStorage`, `spawnQueueMin`, `powers: { [PWR_*]: true|false }`). Errors in one operator are caught and logged so they can't break the main loop.

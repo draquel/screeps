@@ -330,6 +330,10 @@ var util = {
         if(!memory.role){ memory.role = null; }else{ if(!memory.level){ memory.level = 1; } }
         if(name == null){ name = this.nameGenerator(); }
         memory.room = spawn.room.name;
+        if(memory.role === 'miner'){
+            const work = this.minerRegenWork(spawn.room, memory);
+            if(work) memory.work = work; else delete memory.work;
+        }
 
         var build = this.getCreepBuild(memory);
         var energy = this.calcCreepBuildEnergy(build);
@@ -394,7 +398,56 @@ var util = {
             Object.keys(memory.body).forEach(key => { for(let i = 0; i < memory.body[key]; i++){ build.push(key.toLowerCase()) } })
             return build
         }
-        return this.getRoleBuild(memory.role, memory.level || 1)
+        const build = this.getRoleBuild(memory.role, memory.level || 1)
+        // memory.work (set at spawn for regen-boosted miners) raises the WORK count
+        if(memory.work){
+            const have = build.filter(p => p === WORK).length
+            for(let i = have; i < memory.work; i++) build.unshift(WORK)
+        }
+        return build
+    },
+
+    // Regen Source level available to a room: the highest of any source's active
+    // effect and any operator homed there that has learned the power (and has it
+    // enabled in Memory.powerCreepConfig).
+    regenSourceLevel(room){
+        let level = 0
+        for(const s of room.find(FIND_SOURCES)){
+            for(const e of (s.effects || [])){
+                if((e.effect || e.power) === PWR_REGEN_SOURCE) level = Math.max(level, e.level || 0)
+            }
+        }
+        const cfg = Memory.powerCreepConfig && Memory.powerCreepConfig.powers
+        if(cfg && cfg[PWR_REGEN_SOURCE] === false) return level
+        for(const name in (Game.powerCreeps || {})){
+            const pc = Game.powerCreeps[name]
+            const mem = Memory.powerCreeps && Memory.powerCreeps[name]
+            if(!mem || mem.home !== room.name) continue
+            const p = pc.powers && pc.powers[PWR_REGEN_SOURCE]
+            if(p) level = Math.max(level, p.level)
+        }
+        return level
+    },
+
+    // WORK parts a miner needs to keep up with a source under Regen Source:
+    // the source's base rate (capacity / regen time) plus the power's
+    // energy-per-period, 2 energy per WORK, +1 spare like the base table's 6.
+    // Capped by what the room can spawn and the 50-part limit. 0 = no change.
+    minerRegenWork(room, memory){
+        const level = this.regenSourceLevel(room)
+        if(!level) return 0
+        const info = POWER_INFO[PWR_REGEN_SOURCE]
+        const source = memory.target && Game.getObjectById(memory.target)
+        const capacity = source && source.energyCapacity ? source.energyCapacity : SOURCE_ENERGY_CAPACITY
+        const rate = capacity / ENERGY_REGEN_TIME + info.effect[level - 1] / info.period
+        let work = Math.ceil(rate / HARVEST_POWER) + 1
+        const base = this.getRoleBuild(memory.role, memory.level || 1)
+        const baseWork = base.filter(p => p === WORK).length
+        if(work <= baseWork) return 0
+        work = Math.min(work, baseWork + (MAX_CREEP_SIZE - base.length))
+        const spare = room.energyCapacityAvailable - this.calcCreepBuildEnergy(base)
+        work = Math.min(work, baseWork + Math.floor(spare / BODYPART_COST[WORK]))
+        return work > baseWork ? work : 0
     },
 
     getRoleBuild(role,level = 1){
