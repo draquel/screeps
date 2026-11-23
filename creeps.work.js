@@ -174,7 +174,9 @@ if(options.containers){
         if(options.storages){
             let storages = []
             if(creep.room.storage !== undefined){
-                if(creep.room.storage.store.getUsedCapacity(resource) > (taken.filter((currentItem) => currentItem === creep.room.storage.id).length+1) * creep.store.getFreeCapacity(resource)){
+                let inStorage = creep.room.storage.store.getUsedCapacity(resource);
+                // storageAny: take whatever is there (terminal staging of small piles)
+                if(options.storageAny ? inStorage > 0 : inStorage > (taken.filter((currentItem) => currentItem === creep.room.storage.id).length+1) * creep.store.getFreeCapacity(resource)){
                     storages.push(creep.room.storage)
                 }
             }

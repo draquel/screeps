@@ -1173,14 +1173,14 @@ module.exports = {
         // Priority 7: balance non-energy resources between storage and the
         // terminal toward logistics.terminalTarget (exportable surplus staged
         // in the terminal for the broker; excess imports moved to storage)
-        let balance = this.getTerminalBalanceJob(creep.room, creep.store.getFreeCapacity());
+        let balance = this.getTerminalBalanceJob(creep.room);
         if (balance) {
             creep.memory.terminalMoveResource = balance.resource;
             creep.memory.terminalMoveMode = balance.mode;
             let fromTerminal = balance.mode === 'toStorage';
             work.collectResource(creep, {
                 storages: !fromTerminal, containers: false, terminals: fromTerminal,
-                ignoreTerminalThresholds: true,
+                ignoreTerminalThresholds: true, storageAny: true,
                 drops: false, tombs: false, links: false, sources: false,
             }, balance.resource);
             return;
@@ -1283,14 +1283,14 @@ getPowerSpawnNeed(room) {
 
 // Returns { resource, mode } for the first non-energy resource whose terminal
 // amount is off its logistics target: 'toTerminal' when the terminal is more
-// than IN_SLACK under target and storage has some, 'toStorage' when it is more
+// than the in-slack under target and storage has some, 'toStorage' when it is more
 // than OUT_SLACK over (the wide out-margin leaves imports in the terminal where
 // labs/factory can still pull them, instead of shuffling every delivery).
-// minStorage: storage only counts as a source when it holds more than this —
-// getCollectTarget skips a storage holding less than the creep's free
-// capacity, and a job it can't source would block the lower priorities.
-getTerminalBalanceJob(room, minStorage = 0) {
-    const IN_SLACK = 1000, OUT_SLACK = 5000;
+// The in-slack shrinks for small targets (down to 100) so a few hundred of an
+// intermediate still gets staged for logistics. The caller collects with
+// storageAny, so a pile smaller than the creep's free capacity is a valid source.
+getTerminalBalanceJob(room) {
+    const OUT_SLACK = 5000;
     let terminal = room.terminal, storage = room.storage;
     if (!terminal || !storage) return null;
     let resources = new Set([...Object.keys(terminal.store), ...Object.keys(storage.store)]);
@@ -1299,7 +1299,8 @@ getTerminalBalanceJob(room, minStorage = 0) {
         let target = logistics.terminalTarget(room, r);
         let t = terminal.store[r] || 0;
         let s = storage.store[r] || 0;
-        if (t < target - IN_SLACK && s > minStorage && terminal.store.getFreeCapacity() > 0) return { resource: r, mode: 'toTerminal' };
+        let inSlack = Math.min(1000, Math.max(100, Math.floor(target / 2)));
+        if (t < target - inSlack && s > 0 && terminal.store.getFreeCapacity() > 0) return { resource: r, mode: 'toTerminal' };
         if (t > target + OUT_SLACK && storage.store.getFreeCapacity() > 0) return { resource: r, mode: 'toStorage' };
     }
     return null;
@@ -1358,17 +1359,21 @@ getLabFillTarget(creep) {
     return labs.length ? labs[0] : null;
   },
 
-  // Returns { lab, resource } for the first output lab whose product is at/over drain threshold
+  // Returns { lab, resource } for the first output lab whose product is at/over
+  // drain threshold. While the reaction is stalled (an input lab below one
+  // reaction's worth) any product is drained, so small batches reach storage
+  // and logistics can ship them to the room that needs them next.
   getLabProductDrainTarget(room) {
-    let labs = room.find(FIND_MY_STRUCTURES, {
-      filter: (s) =>
-        s.structureType === STRUCTURE_LAB
-        && s.memory.role === 'output'
-        && s.memory.resource,
-    });
+    let all = room.find(FIND_MY_STRUCTURES, { filter: (s) => s.structureType === STRUCTURE_LAB });
+    let labs = all.filter((s) => s.memory.role === 'output' && s.memory.resource);
+    let loaded = (role) => {
+      let l = all.find((s) => s.memory.role === role);
+      return l && l.memory.resource && (l.store[l.memory.resource] || 0) >= LAB_REACTION_AMOUNT;
+    };
+    let stalled = !(loaded('input1') && loaded('input2'));
     for (let lab of labs) {
       let resource = lab.memory.resource;
-      let threshold = lab.memory.drainThreshold || 1500;
+      let threshold = stalled ? 1 : (lab.memory.drainThreshold || 1500);
       if ((lab.store[resource] || 0) >= threshold) {
         return { lab, resource };
       }

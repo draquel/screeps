@@ -28,6 +28,8 @@ const BASE_MINERALS = [RESOURCE_HYDROGEN, RESOURCE_OXYGEN, RESOURCE_UTRIUM, RESO
 const DEFAULTS = {
     runInterval: 10,
     minSend: 1000,          // smallest non-energy send worth a terminal cooldown
+    minSendLabs: 100,       // ...for lab inputs (reaction/boost needs): intermediates are
+                            // made in small batches across rooms and would never move at 1000
     maxSend: 10000,         // largest single non-energy send
     terminalStock: 10000,   // how much exportable surplus to keep staged in the terminal
     terminalEnergyReserve: 10000, // terminal energy a send must leave behind
@@ -229,6 +231,12 @@ module.exports = {
         return Math.min(this.surplusOf(room, r), this.config().terminalStock);
     },
 
+    minSendFor(r, priority){
+        let cfg = this.config();
+        if(r === RESOURCE_ENERGY) return cfg.energy.minSend;
+        return priority <= PRIORITY.reaction ? cfg.minSendLabs : cfg.minSend;
+    },
+
     buildLedger(room){
         let cfg = this.config();
         let needs = [];
@@ -236,7 +244,7 @@ module.exports = {
         for(let r of Object.keys(d.want)){
             let have = this.held(room, r) + (d.inPlace[r] || 0);
             let short = d.want[r].amount - have;
-            if(short >= cfg.minSend) needs.push({ room: room.name, resource: r, amount: short, priority: d.want[r].priority });
+            if(short >= this.minSendFor(r, d.want[r].priority)) needs.push({ room: room.name, resource: r, amount: short, priority: d.want[r].priority });
         }
         let bands = this.energyBands(room);
         let e = this.effectiveEnergy(room);
@@ -293,7 +301,7 @@ module.exports = {
         for(let need of needs){
             let dst = Game.rooms[need.room];
             let isEnergy = need.resource === RESOURCE_ENERGY;
-            let minSend = isEnergy ? cfg.energy.minSend : cfg.minSend;
+            let minSend = this.minSendFor(need.resource, need.priority);
             let maxSend = isEnergy ? cfg.energy.maxSend : cfg.maxSend;
             let remaining = need.amount + pend(need.room, need.resource);
             if(remaining < minSend) continue;
