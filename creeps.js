@@ -392,6 +392,10 @@ module.exports = {
               this.getTargetResource(c) === RESOURCE_ENERGY),
         }).length > 0;
 
+      if (resource === RESOURCE_ENERGY && this.harvesterPreferLink(creep, baseRefillerPresent)) {
+        return;
+      }
+
       if (baseRefillerPresent) {
         if (
           work.depositResources(
@@ -442,6 +446,64 @@ module.exports = {
         creep.memory.working  = true;
       }
     }
+  },
+
+  // Keeps harvesters on the room's sender links. Topping up a link clears
+  // targetDeposit, but the link only fires on a later tick (rooms.runLinks),
+  // so meanwhile the harvester sees it full and commits to something farther
+  // (storage, or another sender link such as a source link). Runs before
+  // depositResources on each home-room delivery tick:
+  //  - next to a sender link with space: deliver there
+  //  - next to a full sender link that will fire soon (sooner than a round
+  //    trip to storage would take): wait for it (returns true)
+  //  - otherwise, if the nearest sender link with space is closer than the
+  //    current target, retarget to it
+  // In tiered mode (no base refiller) it stays out of the way while
+  // spawns/extensions need energy, and never overrides a spawn/extension/
+  // tower/lab target.
+  harvesterPreferLink(creep, pooled) {
+    const targetLink = Game.getObjectById(creep.room.memory.targetLink);
+    if (!targetLink) return false;
+    if (!pooled && creep.room.energyAvailable < creep.room.energyCapacityAvailable) return false;
+    const links = creep.room.find(FIND_MY_STRUCTURES, {
+      filter: (s) => s.structureType === STRUCTURE_LINK && s.id !== targetLink.id,
+    });
+    if (!links.length) return false;
+
+    const current = creep.memory.targetDeposit ? Game.getObjectById(creep.memory.targetDeposit) : null;
+    const yieldable = [STRUCTURE_LINK, STRUCTURE_STORAGE, STRUCTURE_TERMINAL, STRUCTURE_FACTORY, STRUCTURE_CONTAINER];
+    if (current && !pooled && !yieldable.includes(current.structureType)) return false;
+
+    const adjacent = links.filter((l) => creep.pos.isNearTo(l));
+    const adjacentOpen = adjacent.find((l) => l.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+    if (adjacentOpen) {
+      creep.memory.targetDeposit = adjacentOpen.id;
+      return false;
+    }
+
+    // Will a full adjacent link fire soon? Same send conditions as
+    // rooms.runLinks (>=90% full, receiver can take >=100). Worth waiting if
+    // its cooldown is shorter than walking to storage and back out again.
+    const detour = creep.room.storage ? 2 * creep.pos.getRangeTo(creep.room.storage) : 2;
+    const firing = adjacent.find(
+      (l) =>
+        l.cooldown < detour &&
+        l.store.getUsedCapacity(RESOURCE_ENERGY) >= LINK_CAPACITY * 0.9 &&
+        targetLink.store.getFreeCapacity(RESOURCE_ENERGY) >= 100,
+    );
+    if (firing) {
+      creep.memory.targetDeposit = null;
+      return true;
+    }
+
+    if (current) {
+      const open = links.filter((l) => l.store.getFreeCapacity(RESOURCE_ENERGY) > 0);
+      const link = open.length ? creep.pos.findClosestByRange(open) : null;
+      if (link && link.id !== current.id && creep.pos.getRangeTo(link) < creep.pos.getRangeTo(current)) {
+        creep.memory.targetDeposit = link.id;
+      }
+    }
+    return false;
   },
 
   runTransporter(creep) {
