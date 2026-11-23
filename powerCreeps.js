@@ -191,10 +191,17 @@ module.exports = {
             if(spawn) cands.push({ power: PWR_OPERATE_SPAWN, target: spawn });
         }
         let production = require("./production");
-        if(production.roomMem(room.name).job){
-            let lab = production.roles(room).outputs.map(id => Game.getObjectById(id))
-                .find(l => l && !this.hasEffect(l, PWR_OPERATE_LAB));
-            if(lab) cands.push({ power: PWR_OPERATE_LAB, target: lab });
+        let job = production.roomMem(room.name).job;
+        if(job){
+            // Only while the reaction can actually run: both input labs loaded.
+            let roles = production.roles(room);
+            let in1 = Game.getObjectById(roles.in1), in2 = Game.getObjectById(roles.in2);
+            let loaded = (l) => l && l.mineralType && l.store[l.mineralType] >= LAB_REACTION_AMOUNT;
+            if(loaded(in1) && loaded(in2)){
+                let lab = roles.outputs.map(id => Game.getObjectById(id))
+                    .find(l => l && !this.hasEffect(l, PWR_OPERATE_LAB));
+                if(lab) cands.push({ power: PWR_OPERATE_LAB, target: lab });
+            }
         }
         if(pc.store.getFreeCapacity() > 0) cands.push({ power: PWR_GENERATE_OPS });
 

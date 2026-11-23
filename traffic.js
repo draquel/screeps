@@ -139,11 +139,15 @@ function resolve() {
         }
     }
 
-    // Pass 2: issue real moves.
+    // Pass 2: issue real moves. Power creeps use the unwrapped Creep move too:
+    // the engine's PowerCreep.prototype.move is just a room check plus
+    // Creep.prototype.move.call(this), which is our wrapper — calling it here
+    // re-queued the intent instead of moving, so operators never moved.
     for (const id in intents) {
         const { creep, dir } = intents[id];
         const isPc = typeof PowerCreep !== 'undefined' && creep instanceof PowerCreep;
-        (isPc ? originalPcMove : originalMove).call(creep, dir);
+        if (isPc && !creep.room) continue;
+        originalMove.call(creep, dir);
     }
 }
 
