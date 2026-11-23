@@ -816,42 +816,46 @@ module.exports = {
 
     },
 
+    // Keeps each controller in room.memory.reservations reserved. Every 100
+    // ticks, once a reservation drops to RESERVE_REFRESH ticks (or lapses) and
+    // no claimer is alive, spawning or queued for it, queue enough CLAIM to top
+    // it back up to CONTROLLER_RESERVE_MAX. Bodies are as large as the room's
+    // energy capacity allows, so high-RCL rooms send one big claimer instead
+    // of several small ones (each CLAIM adds 1 tick/tick, the controller
+    // decays 1 tick/tick). Claimers suicide once the reservation is full.
     manageReservations(room){
-      //console.log("Managing Reservations for: "+room.name+" - variable is set: "+(room.memory.reservations !== undefined)+" count: "+(room.memory.reservations !== undefined ? 0 : memory.reservations.length))
-      if(room.memory && room.memory.reservations && room.memory.reservations.length > 0 && room.controller.level >= 4){
-        for(var i = 0; i < room.memory.reservations.length; i++){
-          let reservedController = Game.getObjectById(room.memory.reservations[i])
-          if(!reservedController){
-            console.log("["+room.name+"] Reservation: Controller("+room.memory.reservations[i]+") not accessible.")
-            return
-          }
-          if(reservedController){
-            if(reservedController.reservation && reservedController.reservation.ticksToEnd){
-              if(reservedController.reservation.ticksToEnd > 1000){
-                return
-              }
-            }
-            let claimers = util.getAllCreepsByRole("claimer").filter(c => c.memory.targetRoom === reservedController.room.name)
-            let queuedClaimers = room.memory.spawnQueue.filter(c => c.memory.role === "claimer")
-            if(claimers.length > 0 || queuedClaimers.length > 0){
-              console.log("["+room.name+"] Reservation: Reservation of "+reservedController.room.name+" in progress")
-              return
-            } else {
-              console.log("["+room.name+"] Reservation: Detected "+(!reservedController.reservation || (reservedController.reservation && reservedController.reservation.ticksToEnd === 0) ? "Inactive" : "Exiring")+" Reservation for "+reservedController.room.name)
-              let spaces = util.openSpacesNearPos(reservedController.pos)
-              let count = spaces > 3 ? 3 : spaces
-              while(count > 0){
-                this.pushSpawnQueue(room,
-                  {'name':util.nameGenerator(),
-                    'memory':creep.initRole(room,{role:"claimer",level:2,targetRoom:reservedController.room.name,mode:"reserve"})
-                  }
-                )
-                count--
-              }
-            }
-          } else{
-            console.log("["+room.name+"] Reservation: Reservation of "+reservedController.room.name+" still active")
-          }
+      const RESERVE_REFRESH = 1000
+      const ON_SITE = 500   // ticks of a 600-tick claimer spent at the controller, after travel
+      if(!room.memory.reservations || !room.memory.reservations.length || room.controller.level < 4) return
+
+      const partCost = BODYPART_COST[CLAIM] + BODYPART_COST[MOVE]
+      const maxClaim = Math.min(Math.floor(room.energyCapacityAvailable / partCost), Math.floor(MAX_CREEP_SIZE / 2))
+      if(maxClaim < 1) return
+
+      for(const id of room.memory.reservations){
+        const ctrl = Game.getObjectById(id)
+        if(!ctrl){
+          console.log("["+room.name+"] Reservation: Controller("+id+") not accessible.")
+          continue
+        }
+        const target = ctrl.room.name
+        const ticks = (ctrl.reservation && ctrl.reservation.username === room.controller.owner.username) ? ctrl.reservation.ticksToEnd : 0
+        if(ticks > RESERVE_REFRESH) continue
+
+        const active = util.getAllCreepsByRole("claimer").some(c => c.memory.targetRoom === target)
+          || room.memory.spawnQueue.some(c => c.memory.role === "claimer" && c.memory.targetRoom === target)
+        if(active) continue
+
+        // +1: the controller decays one tick per tick while the claimers work.
+        const needed = Math.max(2, Math.ceil((CONTROLLER_RESERVE_MAX - ticks) / ON_SITE) + 1)
+        const count = Math.max(1, Math.min(Math.ceil(needed / maxClaim), util.openSpacesNearPos(ctrl.pos), 3))
+        const perCreep = Math.min(maxClaim, Math.ceil(needed / count))
+        console.log("["+room.name+"] Reservation: "+(ticks ? "Expiring ("+ticks+")" : "Inactive")+" reservation for "+target+" -> "+count+" claimer(s) x "+perCreep+" CLAIM")
+        for(let i = 0; i < count; i++){
+          this.pushSpawnQueue(room, {
+            name: util.nameGenerator(),
+            memory: creep.initRole(room, {role:"claimer", level:2, targetRoom:target, mode:"reserve", body:{CLAIM:perCreep, MOVE:perCreep}})
+          })
         }
       }
     }
