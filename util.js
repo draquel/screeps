@@ -499,17 +499,22 @@ var util = {
             7: {"CARRY":25, "MOVE":19},
             8: {"CARRY":30, "MOVE":20},
         },
-        // Source-focused. WORK capped at 6 because a single source caps at 10 E/tick
-        // (5 WORK). Extra WORK past 6 is wasted on a source. Use mineralMiner for minerals.
+        // Source-focused, sized to the source rather than for speed: a source
+        // yields 3000 per 300 ticks (10 E/tick = 5 WORK) and the remainder is
+        // lost at regen, so faster miners just idle. 6 WORK drains it in 250
+        // ticks, leaving slack. Miners walk once and then stand still, so MOVE
+        // only needs road speed (1 per 2 WORK) and CARRY is a small buffer for
+        // same-tick link/container transfers. Regen Source adds WORK on top
+        // (util.minerRegenWork). Use mineralMiner for minerals.
         "miner":{
           1:{"WORK":2,"CARRY":1,"MOVE":1},
-          2:{"WORK":4,"CARRY":2,"MOVE":1},
-          3:{"WORK":5,"CARRY":2,"MOVE":2},
-          4:{"WORK":6,"CARRY":3,"MOVE":3},
-          5:{"WORK":6,"CARRY":4,"MOVE":5},
-          6:{"WORK":6,"CARRY":5,"MOVE":6},
-          7:{"WORK":6,"CARRY":6,"MOVE":7},
-          8:{"WORK":6,"CARRY":8,"MOVE":8},
+          2:{"WORK":4,"CARRY":1,"MOVE":1},
+          3:{"WORK":6,"CARRY":1,"MOVE":2},
+          4:{"WORK":6,"CARRY":2,"MOVE":3},
+          5:{"WORK":6,"CARRY":2,"MOVE":3},
+          6:{"WORK":6,"CARRY":2,"MOVE":3},
+          7:{"WORK":6,"CARRY":2,"MOVE":3},
+          8:{"WORK":6,"CARRY":2,"MOVE":3},
         },
         // Mineral-focused. Max WORK for extractor throughput.
         "mineralMiner":{

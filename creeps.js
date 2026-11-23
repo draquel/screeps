@@ -805,14 +805,6 @@ module.exports = {
 
   runMiner(creep) {
     let resource = this.getTargetResource(creep);
-    if (creep.memory.working && creep.store.getFreeCapacity() === 0) {
-      creep.memory.working = false;
-      //creep.say('🚚 Deliver');
-    }
-    if (!creep.memory.working && creep.store[resource] === 0) {
-      creep.memory.working = true;
-      //creep.say('🔦 Mining');
-    }
 
     let target;
     if (!creep.memory.target) {
@@ -836,43 +828,100 @@ module.exports = {
     } else {
       target = Game.getObjectById(creep.memory.target);
     }
+    if (target == null) return;
 
-    // Stationary work tile: opt out of being shoved by the traffic manager once
-    // we're within harvest range, and re-enable shoving while we're still en route.
-    if (target != null && creep.pos.inRangeTo(target.pos, 1)) {
-      creep.memory.noShove = true;
-    } else if (creep.memory.noShove) {
-      delete creep.memory.noShove;
+    // Walk to the work tile (on the source's container / next to its link when
+    // there is one, else anywhere in harvest range). Shoving is re-enabled
+    // while en route and disabled once the miner is in place.
+    let spot = this.minerSpot(creep, target, resource);
+    let inPlace = spot ? creep.pos.isEqualTo(spot) : creep.pos.inRangeTo(target.pos, 1);
+    if (!inPlace) {
+      if (creep.memory.noShove) delete creep.memory.noShove;
+      util.moveToTarget(creep, { range: spot ? 0 : 1 }, spot || target);
+      return;
     }
+    creep.memory.noShove = true;
 
-    if (creep.memory.working && target != null) {
-      work.workerHarvest(creep, target);
-    } else {
-      let link = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-        filter: (s) => {
-          return (
-            s.structureType === STRUCTURE_LINK &&
-            s.store.getFreeCapacity(resource) > 0
-          );
-        },
-      });
-      if (link != null && creep.pos.inRangeTo(link.pos.x, link.pos.y, 2)) {
-        res = work.workerTransfer(creep, link);
-      } else {
-        let container = creep.pos.findClosestByRange(FIND_STRUCTURES, {
-          filter: (s) => {
-            return s.structureType === STRUCTURE_CONTAINER;
-          },
-        });
-        if (
-          container &&
-          creep.pos.inRangeTo(container.pos.x, container.pos.y, 2) &&
-          creep.store.getUsedCapacity(resource) > 0
-        ) {
-          work.workerTransfer(creep, container, resource);
+    // Harvest every tick; deposit into an adjacent link/container in the same
+    // tick once the next harvest wouldn't fit (harvest and transfer don't
+    // conflict). Without CARRY, or standing on a container, overflow drops
+    // straight onto the tile.
+    let perHarvest = creep.getActiveBodyparts(WORK) *
+      (resource === RESOURCE_ENERGY ? HARVEST_POWER : HARVEST_MINERAL_POWER);
+    let carried = creep.store.getUsedCapacity(resource);
+    if (carried > 0 && creep.store.getFreeCapacity() < perHarvest * 2) {
+      let deposit = this.minerDeposit(creep, resource, 1);
+      if (deposit) {
+        creep.transfer(deposit, resource);
+      } else if (creep.store.getFreeCapacity() === 0 && !this.minerOnContainer(creep)) {
+        // Legacy layouts: nothing adjacent, so carry it to a deposit within 2.
+        deposit = this.minerDeposit(creep, resource, 2);
+        if (deposit) {
+          work.workerTransfer(creep, deposit, resource);
+          return;
         }
       }
     }
+    let available = resource === RESOURCE_ENERGY ? target.energy : target.mineralAmount;
+    if (available > 0) creep.harvest(target);
+  },
+
+  // Link (energy only) or container with free space within `range` of the miner.
+  minerDeposit(creep, resource, range) {
+    let found = creep.pos.findInRange(FIND_STRUCTURES, range, {
+      filter: (s) =>
+        ((s.structureType === STRUCTURE_LINK && resource === RESOURCE_ENERGY) ||
+          s.structureType === STRUCTURE_CONTAINER) &&
+        s.store.getFreeCapacity(resource) > 0,
+    });
+    return found.find((s) => s.structureType === STRUCTURE_LINK) || found[0] || null;
+  },
+
+  minerOnContainer(creep) {
+    return creep.pos.lookFor(LOOK_STRUCTURES).some((s) => s.structureType === STRUCTURE_CONTAINER);
+  },
+
+  // The tile a miner works from, cached in memory.spot and re-picked every
+  // 500 ticks (so new links/containers are picked up) or when it's built over.
+  // Best: a container next to the target that's also next to a link; then
+  // any container; then a free tile next to a link; otherwise null (any tile
+  // in range). Tiles claimed by other miners are skipped.
+  minerSpot(creep, target, resource) {
+    let room = target.room;
+    let walkable = (pos) => {
+      if (room.getTerrain().get(pos.x, pos.y) === TERRAIN_MASK_WALL) return false;
+      return !pos.lookFor(LOOK_STRUCTURES).some((s) =>
+        OBSTACLE_OBJECT_TYPES.includes(s.structureType) ||
+        (s.structureType === STRUCTURE_RAMPART && !s.my));
+    };
+    let m = creep.memory.spot;
+    if (m && m.target === target.id && Game.time < m.until) {
+      if (m.none) return null;
+      let pos = new RoomPosition(m.x, m.y, m.roomName);
+      if (walkable(pos)) return pos;
+    }
+    let claimed = Object.values(Game.creeps)
+      .filter((c) => c.name !== creep.name && c.memory.spot && !c.memory.spot.none && c.memory.spot.roomName === room.name)
+      .map((c) => c.memory.spot.x + "," + c.memory.spot.y);
+    let near = (pos, type) => pos.findInRange(FIND_STRUCTURES, 1, { filter: (s) => s.structureType === type }).length > 0;
+    let best = null, bestScore = 0;
+    for (let dx = -1; dx <= 1; dx++) {
+      for (let dy = -1; dy <= 1; dy++) {
+        let x = target.pos.x + dx, y = target.pos.y + dy;
+        if ((!dx && !dy) || x < 1 || x > 48 || y < 1 || y > 48) continue;
+        if (claimed.includes(x + "," + y)) continue;
+        let pos = new RoomPosition(x, y, room.name);
+        if (!walkable(pos)) continue;
+        let onContainer = pos.lookFor(LOOK_STRUCTURES).some((s) => s.structureType === STRUCTURE_CONTAINER);
+        let byLink = resource === RESOURCE_ENERGY && near(pos, STRUCTURE_LINK);
+        let score = (onContainer ? 2 : 0) + (byLink ? 1 : 0) + (near(pos, STRUCTURE_CONTAINER) ? 0.5 : 0);
+        if (score > bestScore) { best = pos; bestScore = score; }
+      }
+    }
+    creep.memory.spot = best
+      ? { x: best.x, y: best.y, roomName: best.roomName, target: target.id, until: Game.time + 500 }
+      : { none: true, target: target.id, until: Game.time + 500 };
+    return best;
   },
 
   runMineralTransporter(creep) {
