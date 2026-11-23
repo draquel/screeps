@@ -340,9 +340,14 @@ var util = {
         var type = (memory.role != null ? this.firstToUpperCase(memory.role)+" L"+memory.level : 'Creep')+ ' ('+energy+'E)';
         if(spawn.room.energyAvailable >= energy){
             if(spawn.busy){ return ERR_BUSY; }
-            console.log('['+memory.room+'] Spawn Queue: Spawning '+type+' : "' + name + '"');
             spawn.busy = true;
-            return spawn.spawnCreep(build,name,{memory:memory});
+            const res = spawn.spawnCreep(build,name,{memory:memory});
+            if(res === OK){
+                console.log('['+memory.room+'] Spawn Queue: Spawning '+type+' : "' + name + '"');
+            }else{
+                console.log('['+memory.room+'] Spawn Queue: '+spawn.name+' failed to spawn '+type+' : "' + name + '" ('+res+')');
+            }
+            return res;
         }else{
             return ERR_NOT_ENOUGH_ENERGY;
         }

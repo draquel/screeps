@@ -695,7 +695,10 @@ module.exports = {
         let available = [];
         if(spawns.length){
             for(let i = 0; i < spawns.length; i++){
-                if(spawns[i].spawning == null){
+                // isActive(): spawns over the RCL limit (e.g. after a controller
+                // downgrade) are inert and return ERR_RCL_NOT_ENOUGH forever,
+                // which pinned the queue head on them every tick.
+                if(spawns[i].spawning == null && spawns[i].isActive()){
                     available.push(spawns[i]);
                 }
             }
