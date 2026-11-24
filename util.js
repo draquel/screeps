@@ -44,7 +44,10 @@ var util = {
             for(let name in Memory.rooms) {
                 let gr = Game.rooms[name];
                 if (!gr) {
-                    console.log('['+name+'] Memory: Delete Room Memory (no vision)');
+                    // Empty shells (auto-created by a room.memory read) go quietly.
+                    if (Object.keys(Memory.rooms[name]).length > 0) {
+                        console.log('['+name+'] Memory: Delete Room Memory (no vision)');
+                    }
                     delete Memory.rooms[name];
                     continue;
                 }
@@ -58,7 +61,11 @@ var util = {
                     // that actually have content (legacy residue from before
                     // rooms.run was gated); leave empty shells alone to avoid an
                     // infinite create/delete churn.
-                    if (Object.keys(Memory.rooms[name]).length > 0) {
+                    // While our creeps are in the room they keep re-writing its
+                    // caches (sources, mineral), so deleting it then repeats every
+                    // tick. Leave it; it goes once the room is out of vision.
+                    let occupied = gr.find(FIND_MY_CREEPS).length > 0 || gr.find(FIND_MY_POWER_CREEPS).length > 0;
+                    if (!occupied && Object.keys(Memory.rooms[name]).length > 0) {
                         console.log('['+name+'] Memory: Delete Foreign Room Memory');
                         delete Memory.rooms[name];
                     }
