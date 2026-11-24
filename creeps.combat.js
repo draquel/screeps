@@ -106,8 +106,8 @@ module.exports = {
         { showPath: creep.room.memory.showPath, pathColor: "#ffffff" },
         controller[0],
       );
-    } else if (result === ERR_INVALID_TARGET && !controller.my) {
-      console.log("combatClaim: Attacking Target Controller");
+    } else if (result === ERR_INVALID_TARGET && controller[0] && !controller[0].my) {
+      this.logControllerAttack(creep, controller[0], "claim");
       this.combatAttackController(creep);
     } else if (result === ERR_NO_BODYPART) {
       console.log(
@@ -140,7 +140,10 @@ module.exports = {
       let c = controller[0];
       let foreign = (c.owner && c.owner.username !== creep.owner.username)
         || (c.reservation && c.reservation.username !== creep.owner.username);
-      if (foreign) this.combatAttackController(creep);
+      if (foreign) {
+        this.logControllerAttack(creep, c, "reserve");
+        this.combatAttackController(creep);
+      }
     } else if (result === ERR_NO_BODYPART) {
       console.log(
         "combatReserve: Creep " + creep.name + " does not have CLAIM part",
@@ -149,6 +152,21 @@ module.exports = {
       console.log("combatReserve: Invalid Arguments");
     }
     return result;
+  },
+
+  // One line per creep, logged when it first reaches a foreign controller and
+  // starts attacking it (not every tick of the attack).
+  logControllerAttack(creep, c, mode) {
+    if (creep.memory._attackLogged === c.id) return;
+    creep.memory._attackLogged = c.id;
+    let holder = c.owner
+      ? "owned by " + c.owner.username + " (RCL " + c.level + ", downgrade in " + c.ticksToDowngrade + ")"
+      : c.reservation
+        ? "reserved by " + c.reservation.username + " (" + c.reservation.ticksToEnd + " ticks left)"
+        : "held by someone else";
+    let claim = creep.getActiveBodyparts(CLAIM);
+    console.log("[" + c.room.name + "] Claimer " + creep.name + ": attacking controller " + holder
+      + " with " + claim + " CLAIM, then " + mode + (c.upgradeBlocked ? "; attack cooldown " + c.upgradeBlocked + " ticks" : ""));
   },
 
   combatAttackController(creep) {
