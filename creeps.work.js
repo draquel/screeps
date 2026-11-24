@@ -30,6 +30,21 @@ module.exports =  {
             return
         }else if(result === ERR_TIRED){
             return
+        }else if(result === ERR_NOT_OWNER){
+            // The source's room is owned or reserved by another player. Drop the
+            // target so the creep can pick another, and warn at most once per
+            // NOT_OWNER_LOG_TICKS per creep instead of every tick.
+            creep.memory.targetCollect = null;
+            const NOT_OWNER_LOG_TICKS = 500;
+            if(!creep.memory._notOwnerLog || Game.time - creep.memory._notOwnerLog >= NOT_OWNER_LOG_TICKS){
+                creep.memory._notOwnerLog = Game.time;
+                const c = target && target.room && target.room.controller;
+                const holder = c && c.owner ? "owned by "+c.owner.username
+                    : c && c.reservation ? "reserved by "+c.reservation.username : "not ours";
+                console.log("["+creep.room.name+"] workerHarvest: "+creep.name+" can't harvest in "+(target && target.room ? target.room.name : creep.room.name)+" ("+holder+")"
+                    +(creep.memory.targetRoom ? "; targetRoom "+creep.memory.targetRoom : "")+". Next warning in "+NOT_OWNER_LOG_TICKS+" ticks.");
+            }
+            return
         }else if( result != 0){
           console.log("workerHarvest: "+creep.name+" Unknown Error - "+result)
         }
