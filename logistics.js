@@ -28,7 +28,8 @@ const BASE_MINERALS = [RESOURCE_HYDROGEN, RESOURCE_OXYGEN, RESOURCE_UTRIUM, RESO
 const DEFAULTS = {
     runInterval: 10,
     minSend: 1000,          // smallest non-energy send worth a terminal cooldown
-    minSendLabs: 100,       // ...for lab inputs (reaction/boost needs): intermediates are
+    minSendLabs: 100,       // ...for lab inputs (reaction/boost needs), and only when the send
+                            // is all the donor can give or all that's needed: intermediates are
                             // made in small batches across rooms and would never move at 1000
     maxSend: 10000,         // largest single non-energy send
     terminalStock: 10000,   // how much exportable surplus to keep staged in the terminal
@@ -317,6 +318,12 @@ module.exports = {
                 if(isEnergy) inTerminal = Math.max(0, inTerminal - cfg.terminalEnergyReserve);
                 let amount = Math.min(remaining, surplus, inTerminal, maxSend, dst.terminal.store.getFreeCapacity());
                 if(amount < minSend) continue;
+                // Under the normal minimum (lab inputs only), send only when it's
+                // all this donor can give or all that's still needed. A donor whose
+                // terminal is only partly staged waits, instead of trickling a
+                // couple hundred per transporter trip.
+                // (minSendLabs of slack: transporters stage small targets to within 100.)
+                if(!isEnergy && amount < cfg.minSend && amount + cfg.minSendLabs < Math.min(remaining, surplus)) continue;
                 let cost = Game.market.calcTransactionCost(amount, src.name, dst.name);
                 let energyNeeded = cost + (isEnergy ? amount : 0) + cfg.terminalEnergyReserve;
                 if(termEnergy < energyNeeded) continue;

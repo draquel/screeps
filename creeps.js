@@ -1286,8 +1286,8 @@ getPowerSpawnNeed(room) {
 // than the in-slack under target and storage has some, 'toStorage' when it is more
 // than OUT_SLACK over (the wide out-margin leaves imports in the terminal where
 // labs/factory can still pull them, instead of shuffling every delivery).
-// The in-slack shrinks for small targets (down to 100) so a few hundred of an
-// intermediate still gets staged for logistics. The caller collects with
+// The in-slack is 1000, or at most 100 for targets under 2000, so a few hundred
+// of an intermediate still gets fully staged for logistics. The caller collects with
 // storageAny, so a pile smaller than the creep's free capacity is a valid source.
 getTerminalBalanceJob(room) {
     const OUT_SLACK = 5000;
@@ -1299,7 +1299,9 @@ getTerminalBalanceJob(room) {
         let target = logistics.terminalTarget(room, r);
         let t = terminal.store[r] || 0;
         let s = storage.store[r] || 0;
-        let inSlack = Math.min(1000, Math.max(100, Math.floor(target / 2)));
+        // Small targets stage to within 100 so logistics.run sees the whole
+        // pile as sendable (it only sends < minSend when that's the whole surplus).
+        let inSlack = target >= 2000 ? 1000 : Math.min(100, Math.floor(target / 2));
         if (t < target - inSlack && s > 0 && terminal.store.getFreeCapacity() > 0) return { resource: r, mode: 'toTerminal' };
         if (t > target + OUT_SLACK && storage.store.getFreeCapacity() > 0) return { resource: r, mode: 'toStorage' };
     }
