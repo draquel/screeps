@@ -185,7 +185,7 @@ module.exports = {
         let wants = this.roomConfig(room.name).wants || {};
         for(let r of Object.keys(wants)) add(r, wants[r], PRIORITY.manual);
 
-        let res = { want, inPlace };
+        let res = { want, inPlace, buffer: labResources };
         this._demand[room.name] = res;
         return res;
     },
@@ -245,7 +245,12 @@ module.exports = {
         for(let r of Object.keys(d.want)){
             let have = this.held(room, r) + (d.inPlace[r] || 0);
             let short = d.want[r].amount - have;
-            if(short >= this.minSendFor(r, d.want[r].priority)) needs.push({ room: room.name, resource: r, amount: short, priority: d.want[r].priority });
+            // Small lab sends only while the room is below one lab fill (its
+            // buffer is gone). Above that, wait until a full minSend is short,
+            // or every bit a reaction consumes is re-sent as a 100-200 trickle.
+            let min = this.minSendFor(r, d.want[r].priority);
+            if(min < cfg.minSend && have >= d.want[r].amount - (d.buffer[r] || 0)) min = cfg.minSend;
+            if(short >= min) needs.push({ room: room.name, resource: r, amount: short, priority: d.want[r].priority });
         }
         let bands = this.energyBands(room);
         let e = this.effectiveEnergy(room);
