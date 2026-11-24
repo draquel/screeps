@@ -133,9 +133,14 @@ module.exports = {
         { showPath: creep.room.memory.showPath, pathColor: "#ffffff" },
         controller[0],
       );
-    } else if (result === ERR_INVALID_TARGET && !controller.my) {
-      //let res = this.combatAttackController(creep);
-      //console.log("combatReserve: Attacking Target Controller: "+res);
+    } else if (result === ERR_INVALID_TARGET && controller[0] && !controller[0].my) {
+      // Owned or reserved by someone else (players or Invaders): attack it to
+      // break the ownership/reservation, then reserve. A claimer queued with
+      // respawn keeps coming back until the reservation lands.
+      let c = controller[0];
+      let foreign = (c.owner && c.owner.username !== creep.owner.username)
+        || (c.reservation && c.reservation.username !== creep.owner.username);
+      if (foreign) this.combatAttackController(creep);
     } else if (result === ERR_NO_BODYPART) {
       console.log(
         "combatReserve: Creep " + creep.name + " does not have CLAIM part",

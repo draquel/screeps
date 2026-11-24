@@ -1486,6 +1486,9 @@ getLabFillTarget(creep) {
     if (mode == "claim") {
       if (creep.room.controller.my) {
         console.log(creep.name + " Claimed " + creep.room.controller.room.name);
+        // Done: a respawning claimer (sent to break a hostile controller)
+        // must not come back once the job succeeds.
+        creep.memory.respawn = false;
         creep.suicide();
         return;
       }
@@ -1496,6 +1499,7 @@ getLabFillTarget(creep) {
           console.log(
             creep.name + " Reserved " + creep.room.controller.room.name,
           );
+          creep.memory.respawn = false;
           creep.suicide();
           return;
         }
