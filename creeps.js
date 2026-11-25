@@ -1059,9 +1059,14 @@ module.exports = {
         }
 
     } else {
-        // Always clear job flags at the start of every collect cycle
-        creep.memory.terminalMoveResource = null;
-        creep.memory.terminalMoveMode = null;
+        // Clear job flags at the start of every collect cycle, except a
+        // storage<->terminal move whose resource is still being carried: a
+        // partial pickup otherwise loses its destination and the catch-all
+        // returns it to storage, looping forever.
+        if (!creep.memory.terminalMoveResource || !(creep.store[creep.memory.terminalMoveResource] > 0)) {
+          creep.memory.terminalMoveResource = null;
+          creep.memory.terminalMoveMode = null;
+        }
         creep.memory.drainResource = null;
         creep.memory.labFillResource = null;
         creep.memory.factoryFeedResource = null;
@@ -1174,6 +1179,13 @@ module.exports = {
         // terminal toward logistics.terminalTarget (exportable surplus staged
         // in the terminal for the broker; excess imports moved to storage)
         let balance = this.getTerminalBalanceJob(creep.room);
+        if (balance && creep.store.getUsedCapacity() > (creep.store[balance.resource] || 0)) {
+            // Carrying something else: deliver that first (one balancing job per trip).
+            creep.memory.working = true;
+            creep.memory.targetCollect = null;
+            creep.say("🚚 Deliver");
+            return;
+        }
         if (balance) {
             creep.memory.terminalMoveResource = balance.resource;
             creep.memory.terminalMoveMode = balance.mode;
