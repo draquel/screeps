@@ -355,21 +355,18 @@ module.exports = {
       }
     } else {
       if (!this.inHomeRoom(creep)) {
-        // In the harvest target room, spend a bounded slice of the load on local
-        // build/repair, then carry the reserve home. The reserve is what prevents
-        // the maintain→empty→harvest→maintain cycle that would trap the creep here.
+        // Away from home, spend a bounded slice of the load on build/repair,
+        // then carry the reserve home. The reserve is what prevents the
+        // maintain→empty→harvest→maintain cycle that would trap the creep here.
+        // Construction sites in the target room are worth a detour; repairs
+        // are done in passing (range 3) while walking home, never by
+        // detouring to a far-off road.
         const reserve = creep.store.getCapacity() * 0.75;
-        if (
-          resource === RESOURCE_ENERGY &&
-          this.inTargetRoom(creep) &&
-          creep.store[resource] > reserve
-        ) {
-          if (work.buildConstructionSites(creep)) {
+        if (resource === RESOURCE_ENERGY && creep.store[resource] > reserve) {
+          if (this.inTargetRoom(creep) && work.buildConstructionSites(creep)) {
             return;
           }
-          if (repairEligible && work.maintainBaseStructures(creep)) {
-            return;
-          }
+          if (repairEligible) work.repairInPassing(creep);
         }
         this.moveToHome(creep);
         return;

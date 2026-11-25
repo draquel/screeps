@@ -130,20 +130,34 @@ module.exports =  {
         }
     },
 
+    // memory.target is shared with repair (maintainBase*): only a construction
+    // site counts here, and a repair target is left alone when there's nothing
+    // to build. (Returning a repair target made build() fail and clear it every
+    // other tick, so the creep alternated between walking and wasting a tick.)
     getBuildTarget(creep){
-        let target = null
-        if((Game.getObjectById(creep.memory.target) === null || !creep.memory.target) && creep.store.getUsedCapacity() > (creep.store.getCapacity() * 0.1)){
-            var cSites = creep.room.find(FIND_CONSTRUCTION_SITES);
-            if(cSites.length){
-                target = creep.pos.findClosestByRange(cSites,{algorithm: "astar"})
-                if(target != null) {
-                    creep.memory.target = target.id
-                }
-            }
-        }else{
-            target = Game.getObjectById(creep.memory.target);
-        }
+        let cur = creep.memory.target ? Game.getObjectById(creep.memory.target) : null
+        if(cur instanceof ConstructionSite) return cur
+        if(creep.store.getUsedCapacity() <= creep.store.getCapacity() * 0.1) return null
+        let cSites = creep.room.find(FIND_CONSTRUCTION_SITES, { filter: (c) => c.my })
+        if(!cSites.length) return null
+        let target = creep.pos.findClosestByRange(cSites)
+        if(target != null) creep.memory.target = target.id
         return target
+    },
+
+    // Repairs the most damaged road/container (or other non-defense structure)
+    // within range 3 without stopping: repair and move both happen this tick.
+    // Returns true if it repaired something.
+    repairInPassing(creep){
+        if(!creep.getActiveBodyparts(WORK) || !(creep.store[RESOURCE_ENERGY] > 0)) return false
+        let damaged = creep.pos.findInRange(FIND_STRUCTURES, 3, {
+            filter: (s) => s.hits < s.hitsMax
+                && s.structureType !== STRUCTURE_WALL && s.structureType !== STRUCTURE_RAMPART
+                && (s.my || !s.owner)
+        })
+        if(!damaged.length) return false
+        damaged.sort((a, b) => a.hits / a.hitsMax - b.hits / b.hitsMax)
+        return creep.repair(damaged[0]) === OK
     },
 
     /*
